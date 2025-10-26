@@ -112,10 +112,38 @@ private fun getHtmlContent(): String {
             border-radius: 5px;
             font-size: 11px;
         }
+        #rotationToggle {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: #ffffff;
+            border: 3px solid #4CAF50;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            z-index: 10000;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6);
+            white-space: nowrap;
+        }
+        #rotationToggle:hover {
+            background: rgba(76, 175, 80, 0.6);
+            border-color: #66BB6A;
+            transform: translateX(-50%) translateY(-3px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.8);
+        }
+        #rotationToggle:active {
+            transform: translateX(-50%) scale(0.95);
+        }
     </style>
 </head>
 <body>
     <div id="info"></div>
+    <button id="rotationToggle">🌍 Rotation: Simulated Speed</button>
     <div id="instructions">🖱️ Drag to rotate • Scroll to zoom • Click satellites for info</div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -130,6 +158,8 @@ private fun getHtmlContent(): String {
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         let currentSatellites = [];
+        let useRealisticRotation = false; // Toggle for rotation mode
+        let visualRotationSpeed = 0.0005; // Visual rotation speed
 
         function init() {
             scene = new THREE.Scene();
@@ -192,7 +222,24 @@ private fun getHtmlContent(): String {
             renderer.domElement.addEventListener('touchend', onTouchEnd);
             window.addEventListener('resize', onWindowResize);
 
+            // Rotation mode toggle
+            document.getElementById('rotationToggle').addEventListener('click', () => {
+                useRealisticRotation = !useRealisticRotation;
+                updateRotationMode();
+            });
+
             animate();
+        }
+
+        function updateRotationMode() {
+            const button = document.getElementById('rotationToggle');
+            if (useRealisticRotation) {
+                button.innerHTML = '🌍 Rotation: Realistic';
+                button.style.background = 'rgba(76, 175, 80, 0.8)';
+            } else {
+                button.innerHTML = '🌍 Rotation: Visual Speed';
+                button.style.background = 'rgba(0, 0, 0, 0.8)';
+            }
         }
 
         function addLandmasses() {
@@ -642,8 +689,20 @@ private fun getHtmlContent(): String {
             requestAnimationFrame(animate);
             
             earthGroup.rotation.x = rotation.x;
-            earthGroup.rotation.y += 0.0005;
-            rotation.y += 0.0005;
+            
+            if (useRealisticRotation) {
+                // Realistic rotation: Earth rotates 360° in 24 hours
+                const now = Date.now();
+                const earthRotationRate = (2 * Math.PI) / 86400000; // radians per millisecond
+                const millisecondsInDay = 86400000;
+                const currentTimeInDay = now % millisecondsInDay;
+                const earthAutoRotation = (currentTimeInDay * earthRotationRate);
+                earthGroup.rotation.y = rotation.y + earthAutoRotation;
+            } else {
+                // Visual rotation: Fast visual speed for better viewing
+                earthGroup.rotation.y += visualRotationSpeed;
+                rotation.y += visualRotationSpeed;
+            }
             
             renderer.render(scene, camera);
         }
