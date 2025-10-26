@@ -29,6 +29,10 @@ data class SatelliteData(
     val name: String,
     val x: Double,
     val y: Double,
-    val z: Double
+    val z: Double,
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double,
+    val type: String,
+    val description: String
 )
-

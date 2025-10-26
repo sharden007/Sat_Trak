@@ -21,9 +21,9 @@ class SatelliteRepository {
     private val seconds = 1
 
     private val satellites = listOf(
-        Pair(25544, "ISS"),
-        Pair(33591, "NOAA 19"),
-        Pair(36585, "GPS BIIF-1")
+        SatelliteInfo(25544, "ISS", "Space Station", "International Space Station - A habitable artificial satellite in low Earth orbit, serving as a microgravity laboratory"),
+        SatelliteInfo(33591, "NOAA 19", "Weather Satellite", "NOAA-19 - Polar-orbiting environmental satellite monitoring Earth's weather, atmosphere, and environment"),
+        SatelliteInfo(36585, "GPS BIIF-1", "GPS Navigation", "GPS BIIF-1 (Navstar) - Part of the Global Positioning System constellation providing navigation and timing services")
     )
 
     private val moshi = Moshi.Builder()
@@ -39,11 +39,11 @@ class SatelliteRepository {
 
     suspend fun fetchSatellitePositions(): List<SatelliteData> = coroutineScope {
         try {
-            satellites.map { (id, name) ->
+            satellites.map { satInfo ->
                 async {
                     try {
                         val response = apiService.getSatellitePosition(
-                            satelliteId = id,
+                            satelliteId = satInfo.id,
                             observerLat = observerLat,
                             observerLng = observerLng,
                             observerAlt = observerAlt,
@@ -57,10 +57,21 @@ class SatelliteRepository {
                                 position.longitude,
                                 position.altitude
                             )
-                            SatelliteData(id, name, coords.x, coords.y, coords.z)
+                            SatelliteData(
+                                id = satInfo.id,
+                                name = satInfo.name,
+                                x = coords.x,
+                                y = coords.y,
+                                z = coords.z,
+                                latitude = position.latitude,
+                                longitude = position.longitude,
+                                altitude = position.altitude,
+                                type = satInfo.type,
+                                description = satInfo.description
+                            )
                         }
                     } catch (e: Exception) {
-                        Log.e("SatelliteRepository", "Error fetching satellite $id ($name): ${e.message}", e)
+                        Log.e("SatelliteRepository", "Error fetching satellite ${satInfo.id} (${satInfo.name}): ${e.message}", e)
                         null
                     }
                 }
@@ -86,5 +97,11 @@ class SatelliteRepository {
     }
 
     data class Coordinate(val x: Double, val y: Double, val z: Double)
-}
 
+    private data class SatelliteInfo(
+        val id: Int,
+        val name: String,
+        val type: String,
+        val description: String
+    )
+}

@@ -16,6 +16,12 @@ class SatelliteViewModel : ViewModel() {
     private val _satellites = mutableStateOf<List<SatelliteData>>(emptyList())
     val satellites: State<List<SatelliteData>> = _satellites
 
+    private val _isLoading = mutableStateOf(false)
+    val isLoading: State<Boolean> = _isLoading
+
+    private val _errorMessage = mutableStateOf("")
+    val errorMessage: State<String> = _errorMessage
+
     init {
         startPeriodicUpdate()
     }
@@ -31,12 +37,25 @@ class SatelliteViewModel : ViewModel() {
 
     private suspend fun fetchSatellites() {
         try {
+            _isLoading.value = true
+            _errorMessage.value = ""
+
             val data = repository.fetchSatellitePositions()
-            _satellites.value = data
-            Log.d("SatelliteViewModel", "Fetched ${data.size} satellites")
+
+            if (data.isNotEmpty()) {
+                _satellites.value = data
+                Log.d("SatelliteViewModel", "Successfully fetched ${data.size} satellites")
+            } else {
+                if (_satellites.value.isEmpty()) {
+                    _errorMessage.value = "No satellite data available. Check API key."
+                }
+                Log.w("SatelliteViewModel", "No satellites returned from API")
+            }
         } catch (e: Exception) {
+            _errorMessage.value = "Error: ${e.message}"
             Log.e("SatelliteViewModel", "Error fetching satellites: ${e.message}", e)
+        } finally {
+            _isLoading.value = false
         }
     }
 }
-
