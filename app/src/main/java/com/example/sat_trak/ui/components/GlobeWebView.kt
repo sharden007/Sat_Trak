@@ -58,8 +58,8 @@ fun GlobeWebView(
 
             // Set up zoom controls
             onZoomControlsReady?.invoke(
-                zoomIn = { webView.evaluateJavascript("zoomIn();", null) },
-                zoomOut = { webView.evaluateJavascript("zoomOut();", null) }
+                { webView.evaluateJavascript("zoomIn();", null) },
+                { webView.evaluateJavascript("zoomOut();", null) }
             )
         }
     )
