@@ -14,7 +14,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 class SatelliteRepository {
-    private val apiKey = "YOUR_API_KEY_HERE"
+    private val apiKey = "ZKU3NJ-D77EGQ-7MB4U3-5LC4"
     private val observerLat = 0.0
     private val observerLng = 0.0
     private val observerAlt = 0
