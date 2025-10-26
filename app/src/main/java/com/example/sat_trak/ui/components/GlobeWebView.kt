@@ -123,6 +123,7 @@ private fun getHtmlContent(): String {
         let scene, camera, renderer, earth, earthGroup;
         let satelliteObjects = [];
         let satelliteLabels = [];
+        let continentLabels = [];
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
         let rotation = { x: 0.4, y: 0 };
@@ -133,225 +134,260 @@ private fun getHtmlContent(): String {
         function init() {
             scene = new THREE.Scene();
             
-            // Adjusted camera for better view - pulled back more
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.z = 18000;  // Increased from 15000 to show full globe
+            camera.position.z = 18000;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 1);
             document.body.appendChild(renderer.domElement);
 
-            // Create Earth group for rotation
             earthGroup = new THREE.Group();
             scene.add(earthGroup);
 
-            // Create Earth with realistic land/water appearance
-            const geometry = new THREE.SphereGeometry(6371, 128, 128);
-            
-            // Create custom shader material with land and ocean colors
+            // Create Earth sphere with deep blue oceans
+            const geometry = new THREE.SphereGeometry(6371, 256, 256);
             const material = new THREE.MeshPhongMaterial({
-                map: createEarthTexture(),
-                bumpMap: createBumpTexture(),
-                bumpScale: 50,
-                specular: 0x333333,
-                shininess: 15,
-                emissive: 0x112244,
+                color: 0x1a4d8f,  // Deep ocean blue
+                specular: 0x3366aa,
+                shininess: 30,
+                emissive: 0x0a2a5a,
                 emissiveIntensity: 0.3
             });
             
             earth = new THREE.Mesh(geometry, material);
             earthGroup.add(earth);
 
+            // Add realistic brown landmasses
+            addLandmasses();
+            
             // Add continent labels
             addContinentLabels();
+            
+            // Add ocean labels
+            addOceanLabels();
 
-            // Add equator line for reference
-            const equatorGeometry = new THREE.TorusGeometry(6371, 10, 16, 100);
-            const equatorMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0x44ff44, 
-                transparent: true, 
-                opacity: 0.3 
-            });
-            const equator = new THREE.Mesh(equatorGeometry, equatorMaterial);
-            equator.rotation.x = Math.PI / 2;
-            earthGroup.add(equator);
-
-            // Add lighting
+            // Lighting for depth and realism
             const ambientLight = new THREE.AmbientLight(0x404040, 2.5);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.8);
             directionalLight.position.set(10000, 5000, 5000);
             scene.add(directionalLight);
 
-            const backLight = new THREE.DirectionalLight(0x6666ff, 0.5);
+            const backLight = new THREE.DirectionalLight(0x6688ff, 0.6);
             backLight.position.set(-10000, -5000, -5000);
             scene.add(backLight);
 
-            // Add stars background
             addStars();
 
-            // Mouse/Touch controls
+            // Event listeners
             renderer.domElement.addEventListener('mousedown', onMouseDown);
             renderer.domElement.addEventListener('mousemove', onMouseMove);
             renderer.domElement.addEventListener('mouseup', onMouseUp);
             renderer.domElement.addEventListener('wheel', onWheel);
             renderer.domElement.addEventListener('click', onClick);
-
             renderer.domElement.addEventListener('touchstart', onTouchStart);
             renderer.domElement.addEventListener('touchmove', onTouchMove);
             renderer.domElement.addEventListener('touchend', onTouchEnd);
-
             window.addEventListener('resize', onWindowResize);
 
             animate();
         }
 
-        // Create realistic Earth texture with continents and oceans
-        function createEarthTexture() {
-            const size = 2048;
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const context = canvas.getContext('2d');
-
-            // Ocean color (deep blue)
-            context.fillStyle = '#0a4d8f';
-            context.fillRect(0, 0, size, size);
-
-            // Draw continents with approximate shapes
-            context.fillStyle = '#2d5016'; // Dark green for land
+        function addLandmasses() {
+            const continents = getContinentData();
             
-            // Africa
-            drawContinent(context, size, 0.5, 0.5, [
-                [0.42, 0.35], [0.58, 0.35], [0.60, 0.42], [0.62, 0.55],
-                [0.58, 0.70], [0.48, 0.72], [0.42, 0.65], [0.40, 0.50]
-            ]);
-            
-            // Europe
-            drawContinent(context, size, 0.5, 0.3, [
-                [0.48, 0.20], [0.58, 0.18], [0.62, 0.25], [0.60, 0.32],
-                [0.52, 0.35], [0.46, 0.30]
-            ]);
-            
-            // Asia
-            drawContinent(context, size, 0.7, 0.3, [
-                [0.60, 0.15], [0.85, 0.12], [0.92, 0.25], [0.88, 0.40],
-                [0.75, 0.38], [0.65, 0.35], [0.62, 0.25]
-            ]);
-            
-            // North America
-            drawContinent(context, size, 0.2, 0.25, [
-                [0.10, 0.15], [0.25, 0.10], [0.35, 0.15], [0.38, 0.28],
-                [0.32, 0.42], [0.20, 0.45], [0.12, 0.38], [0.08, 0.25]
-            ]);
-            
-            // South America
-            drawContinent(context, size, 0.28, 0.6, [
-                [0.25, 0.48], [0.32, 0.48], [0.35, 0.55], [0.33, 0.68],
-                [0.28, 0.72], [0.23, 0.65], [0.22, 0.52]
-            ]);
-            
-            // Australia
-            drawContinent(context, size, 0.8, 0.65, [
-                [0.75, 0.62], [0.85, 0.60], [0.88, 0.68], [0.82, 0.72],
-                [0.74, 0.70]
-            ]);
-            
-            // Antarctica (bottom strip)
-            context.fillRect(0, size * 0.85, size, size * 0.15);
-
-            // Add some texture variation
-            addLandTexture(context, size);
-
-            const texture = new THREE.Texture(canvas);
-            texture.needsUpdate = true;
-            return texture;
-        }
-
-        function drawContinent(context, size, centerX, centerY, points) {
-            context.beginPath();
-            points.forEach((point, index) => {
-                const x = point[0] * size;
-                const y = point[1] * size;
-                if (index === 0) {
-                    context.moveTo(x, y);
-                } else {
-                    context.lineTo(x, y);
-                }
+            continents.forEach(continent => {
+                // Create 3D filled mesh on sphere surface
+                createLandmassOnSphere(continent.coordinates);
             });
-            context.closePath();
-            context.fill();
         }
 
-        function addLandTexture(context, size) {
-            // Add subtle variations to land masses
-            for (let i = 0; i < 5000; i++) {
-                const x = Math.random() * size;
-                const y = Math.random() * size;
-                const imageData = context.getImageData(x, y, 1, 1);
-                const pixel = imageData.data;
-                
-                // Only add texture to land (green areas)
-                if (pixel[1] > pixel[2]) {
-                    context.fillStyle = Math.random() > 0.5 ? '#3d6826' : '#1d4006';
-                    context.fillRect(x, y, 2, 2);
+        function createLandmassOnSphere(coordinates) {
+            // Create filled landmass using proper triangulation
+            const vertices = [];
+            const indices = [];
+            
+            // Calculate center point
+            const centerLat = coordinates.reduce((sum, c) => sum + c[0], 0) / coordinates.length;
+            const centerLon = coordinates.reduce((sum, c) => sum + c[1], 0) / coordinates.length;
+            const centerPos = latLonToVector3(centerLat, centerLon, 6371 + 10);
+            
+            // Add all edge vertices
+            const edgeVertices = [];
+            for (let i = 0; i < coordinates.length; i++) {
+                const pos = latLonToVector3(coordinates[i][0], coordinates[i][1], 6371 + 10);
+                vertices.push(pos.x, pos.y, pos.z);
+                edgeVertices.push(pos);
+            }
+            
+            // Add center vertex
+            const centerIndex = vertices.length / 3;
+            vertices.push(centerPos.x, centerPos.y, centerPos.z);
+            
+            // Create triangle fan from center to all edges
+            for (let i = 0; i < coordinates.length; i++) {
+                const next = (i + 1) % coordinates.length;
+                indices.push(centerIndex, i, next);
+            }
+            
+            // Create the filled geometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            
+            // Brown material for landmass fill
+            const material = new THREE.MeshPhongMaterial({
+                color: 0xa89968,  // Sandy brown
+                emissive: 0x7a6545,
+                emissiveIntensity: 0.25,
+                side: THREE.DoubleSide,
+                flatShading: false,
+                shininess: 10
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            earthGroup.add(mesh);
+            
+            // Add thicker outline for definition
+            const outlinePoints = coordinates.map(coord => 
+                latLonToVector3(coord[0], coord[1], 6371 + 12)
+            );
+            outlinePoints.push(outlinePoints[0].clone());
+            
+            const curve = new THREE.CatmullRomCurve3(outlinePoints);
+            const tubeGeometry = new THREE.TubeGeometry(curve, outlinePoints.length * 4, 25, 8, false);
+            const tubeMaterial = new THREE.MeshPhongMaterial({
+                color: 0x7a5d3a,  // Darker brown outline
+                emissive: 0x5a4321,
+                emissiveIntensity: 0.3
+            });
+            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+            earthGroup.add(tube);
+        }
+
+        function getContinentData() {
+            // Accurate continent outlines
+            return [
+                {
+                    name: 'Africa',
+                    coordinates: [
+                        [37, -6], [36, 0], [37, 10], [32, 22], [31, 32], [29, 35],
+                        [24, 37], [15, 39], [12, 43], [4, 51], [-1, 42], [-11, 43],
+                        [-17, 49], [-26, 49], [-34, 28], [-35, 18], [-22, 15], [-12, 13],
+                        [0, 10], [10, 15], [11, 20], [15, 10], [23, 20], [30, 32],
+                        [35, 10], [37, -6]
+                    ]
+                },
+                {
+                    name: 'Europe',
+                    coordinates: [
+                        [71, 26], [70, 31], [68, 40], [66, 48], [60, 60], [56, 63],
+                        [54, 66], [50, 60], [48, 52], [43, 44], [40, 36], [36, 25],
+                        [37, 12], [40, 0], [43, -9], [48, -2], [52, 8], [58, 14],
+                        [65, 22], [71, 26]
+                    ]
+                },
+                {
+                    name: 'Asia',
+                    coordinates: [
+                        [77, 105], [75, 115], [72, 130], [68, 145], [64, 160], [58, 170],
+                        [50, 171], [42, 166], [35, 150], [28, 135], [20, 120], [10, 105],
+                        [5, 95], [0, 80], [8, 70], [20, 68], [30, 75], [36, 95],
+                        [43, 110], [50, 125], [58, 115], [65, 95], [68, 70], [65, 55],
+                        [58, 50], [55, 55], [60, 75], [70, 90], [76, 100], [77, 105]
+                    ]
+                },
+                {
+                    name: 'North America',
+                    coordinates: [
+                        [83, -95], [80, -85], [75, -75], [70, -68], [60, -65], [50, -55],
+                        [48, -125], [55, -135], [65, -145], [72, -165], [70, 178], [60, 165],
+                        [55, -168], [50, -155], [45, -145], [35, -125], [28, -115], [15, -112],
+                        [15, -90], [25, -82], [35, -80], [45, -75], [55, -75], [65, -85],
+                        [75, -90], [83, -95]
+                    ]
+                },
+                {
+                    name: 'South America',
+                    coordinates: [
+                        [12, -72], [8, -65], [0, -60], [-8, -55], [-18, -57], [-28, -65],
+                        [-38, -72], [-48, -75], [-55, -70], [-54, -67], [-48, -68], [-38, -63],
+                        [-28, -58], [-18, -54], [-8, -58], [2, -66], [8, -70], [12, -72]
+                    ]
+                },
+                {
+                    name: 'Australia',
+                    coordinates: [
+                        [-10, 142], [-12, 150], [-18, 154], [-25, 153], [-33, 151],
+                        [-38, 145], [-38, 138], [-35, 130], [-28, 125], [-22, 122],
+                        [-15, 123], [-11, 132], [-10, 142]
+                    ]
+                },
+                {
+                    name: 'Antarctica',
+                    coordinates: [
+                        [-65, -60], [-68, -40], [-72, -20], [-76, 0], [-80, 20], [-84, 40],
+                        [-87, 70], [-85, 100], [-80, 130], [-75, 160], [-70, -170],
+                        [-66, -120], [-64, -80], [-65, -60]
+                    ]
                 }
-            }
+            ];
         }
 
-        function createBumpTexture() {
-            const size = 1024;
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const context = canvas.getContext('2d');
-
-            // Create a grayscale bump map
-            context.fillStyle = '#808080';
-            context.fillRect(0, 0, size, size);
-
-            // Add random elevation for mountains
-            for (let i = 0; i < 3000; i++) {
-                const x = Math.random() * size;
-                const y = Math.random() * size;
-                const brightness = Math.floor(128 + Math.random() * 127);
-                context.fillStyle = `rgb(${'$'}{brightness},${'$'}{brightness},${'$'}{brightness})`;
-                context.fillRect(x, y, 3, 3);
-            }
-
-            const texture = new THREE.Texture(canvas);
-            texture.needsUpdate = true;
-            return texture;
+        function latLonToVector3(lat, lon, radius) {
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lon + 180) * (Math.PI / 180);
+            
+            const x = -(radius * Math.sin(phi) * Math.cos(theta));
+            const y = radius * Math.cos(phi);
+            const z = radius * Math.sin(phi) * Math.sin(theta);
+            
+            return new THREE.Vector3(x, y, z);
         }
 
         function addContinentLabels() {
             const continents = [
-                { name: 'AFRICA', lat: 0, lon: 20 },
-                { name: 'EUROPE', lat: 50, lon: 10 },
-                { name: 'ASIA', lat: 35, lon: 90 },
-                { name: 'N. AMERICA', lat: 45, lon: -100 },
-                { name: 'S. AMERICA', lat: -15, lon: -60 },
-                { name: 'AUSTRALIA', lat: -25, lon: 135 },
-                { name: 'ANTARCTICA', lat: -80, lon: 0 }
+                { name: 'AFRICA', lat: 0, lon: 20, size: 2000 },
+                { name: 'EUROPE', lat: 54, lon: 20, size: 1600 },
+                { name: 'ASIA', lat: 50, lon: 100, size: 2200 },
+                { name: 'NORTH\\nAMERICA', lat: 54, lon: -100, size: 1800 },
+                { name: 'SOUTH\\nAMERICA', lat: -15, lon: -60, size: 1800 },
+                { name: 'AUSTRALIA', lat: -25, lon: 135, size: 1800 },
+                { name: 'ANTARCTICA', lat: -75, lon: 0, size: 2000 }
             ];
 
             continents.forEach(continent => {
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                canvas.width = 512;
-                canvas.height = 128;
+                canvas.width = 1024;
+                canvas.height = 256;
                 
-                context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                context.font = 'Bold 48px Arial';
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw text with strong outline
+                context.font = 'Bold 80px Arial';
                 context.textAlign = 'center';
-                context.fillText(continent.name, 256, 80);
+                context.textBaseline = 'middle';
                 
-                // Add text shadow for better visibility
-                context.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-                context.lineWidth = 3;
-                context.strokeText(continent.name, 256, 80);
+                const lines = continent.name.split('\\n');
+                
+                // Black outline for visibility
+                context.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+                context.lineWidth = 10;
+                lines.forEach((line, i) => {
+                    const y = 128 + (i - (lines.length - 1) / 2) * 90;
+                    context.strokeText(line, 512, y);
+                });
+                
+                // White text fill
+                context.fillStyle = 'rgba(255, 255, 255, 1.0)';
+                lines.forEach((line, i) => {
+                    const y = 128 + (i - (lines.length - 1) / 2) * 90;
+                    context.fillText(line, 512, y);
+                });
 
                 const texture = new THREE.Texture(canvas);
                 texture.needsUpdate = true;
@@ -359,21 +395,75 @@ private fun getHtmlContent(): String {
                 const spriteMaterial = new THREE.SpriteMaterial({ 
                     map: texture,
                     transparent: true,
-                    opacity: 0.8
+                    depthTest: false
                 });
                 const sprite = new THREE.Sprite(spriteMaterial);
                 
-                // Convert lat/lon to 3D position
-                const radius = 6371 + 50; // Slightly above surface
-                const phi = (90 - continent.lat) * (Math.PI / 180);
-                const theta = (continent.lon + 180) * (Math.PI / 180);
+                const pos = latLonToVector3(continent.lat, continent.lon, 6371 + 300);
+                sprite.position.copy(pos);
+                sprite.scale.set(continent.size, continent.size * 0.25, 1);
                 
-                sprite.position.x = -(radius * Math.sin(phi) * Math.cos(theta));
-                sprite.position.y = radius * Math.cos(phi);
-                sprite.position.z = radius * Math.sin(phi) * Math.sin(theta);
-                
-                sprite.scale.set(1200, 300, 1);
                 earthGroup.add(sprite);
+                continentLabels.push(sprite);
+            });
+        }
+
+        function addOceanLabels() {
+            const oceans = [
+                { name: 'PACIFIC\\nOCEAN', lat: 0, lon: -160, size: 2400 },
+                { name: 'ATLANTIC\\nOCEAN', lat: 15, lon: -35, size: 2200 },
+                { name: 'INDIAN\\nOCEAN', lat: -20, lon: 75, size: 2200 },
+                { name: 'ARCTIC\\nOCEAN', lat: 80, lon: 0, size: 2000 },
+                { name: 'SOUTHERN\\nOCEAN', lat: -65, lon: 90, size: 2000 }
+            ];
+
+            oceans.forEach(ocean => {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 1024;
+                canvas.height = 256;
+                
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw ocean names in blue/cyan
+                context.font = 'Bold 70px Arial';
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                
+                const lines = ocean.name.split('\\n');
+                
+                // Dark outline
+                context.strokeStyle = 'rgba(0, 20, 40, 0.9)';
+                context.lineWidth = 8;
+                lines.forEach((line, i) => {
+                    const y = 128 + (i - (lines.length - 1) / 2) * 85;
+                    context.strokeText(line, 512, y);
+                });
+                
+                // Cyan/light blue fill for ocean names
+                context.fillStyle = 'rgba(100, 200, 255, 0.9)';
+                lines.forEach((line, i) => {
+                    const y = 128 + (i - (lines.length - 1) / 2) * 85;
+                    context.fillText(line, 512, y);
+                });
+
+                const texture = new THREE.Texture(canvas);
+                texture.needsUpdate = true;
+
+                const spriteMaterial = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true,
+                    depthTest: false,
+                    opacity: 0.85
+                });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                
+                const pos = latLonToVector3(ocean.lat, ocean.lon, 6371 + 250);
+                sprite.position.copy(pos);
+                sprite.scale.set(ocean.size, ocean.size * 0.25, 1);
+                
+                earthGroup.add(sprite);
+                continentLabels.push(sprite);
             });
         }
 
@@ -495,7 +585,6 @@ private fun getHtmlContent(): String {
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Zoom functions for button controls
         function zoomIn() {
             camera.position.z = Math.max(9000, camera.position.z - 1000);
         }
@@ -507,15 +596,12 @@ private fun getHtmlContent(): String {
         function updateSatellites(satellites) {
             currentSatellites = satellites;
             
-            // Remove old satellites and labels
             satelliteObjects.forEach(obj => earthGroup.remove(obj));
             satelliteLabels.forEach(label => earthGroup.remove(label));
             satelliteObjects = [];
             satelliteLabels = [];
 
-            // Add new satellites with labels
             satellites.forEach(sat => {
-                // Create satellite sphere
                 const geometry = new THREE.SphereGeometry(120, 16, 16);
                 const material = new THREE.MeshBasicMaterial({ 
                     color: sat.id === 25544 ? 0xff0000 : (sat.id === 33591 ? 0x00ff00 : 0xffff00)
@@ -526,7 +612,6 @@ private fun getHtmlContent(): String {
                 earthGroup.add(sphere);
                 satelliteObjects.push(sphere);
 
-                // Create text label using sprite
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 canvas.width = 256;

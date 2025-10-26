@@ -1,9 +1,11 @@
 package com.example.sat_trak.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +16,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.sat_trak.data.models.SatelliteData
 import com.example.sat_trak.ui.components.GlobeWebView
 import com.example.sat_trak.ui.viewmodel.SatelliteViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,6 +29,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     var selectedSatellite by remember { mutableStateOf<SatelliteData?>(null) }
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
+    var showApiDataDialog by remember { mutableStateOf(false) }
     var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
     var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -115,6 +120,21 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             }
         }
 
+        // API Data Viewer Button
+        FloatingActionButton(
+            onClick = { showApiDataDialog = true },
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = "View API Data"
+            )
+        }
+
         // Zoom Controls
         Column(
             modifier = Modifier
@@ -130,7 +150,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                 modifier = Modifier.size(56.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
+                    imageVector = Icons.Filled.Add,
                     contentDescription = "Zoom In",
                     modifier = Modifier.size(24.dp)
                 )
@@ -143,13 +163,36 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(56.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Remove,
-                    contentDescription = "Zoom Out",
-                    modifier = Modifier.size(24.dp)
+                Text(
+                    text = "−",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
+    }
+
+    // API Data Dialog
+    if (showApiDataDialog) {
+        AlertDialog(
+            onDismissRequest = { showApiDataDialog = false },
+            title = {
+                Text(
+                    text = "📡 Live API Data",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                ApiDataContent(satellites = satellites, isLoading = isLoading)
+            },
+            confirmButton = {
+                TextButton(onClick = { showApiDataDialog = false }) {
+                    Text("Close")
+                }
+            },
+            modifier = Modifier.fillMaxWidth(0.95f)
+        )
     }
 
     // Bottom Sheet for Satellite Details
@@ -160,6 +203,114 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
         ) {
             SatelliteDetailSheet(satellite = selectedSatellite!!)
         }
+    }
+}
+
+@Composable
+fun ApiDataContent(satellites: List<SatelliteData>, isLoading: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 500.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        if (isLoading) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Fetching data...")
+            }
+        } else if (satellites.isEmpty()) {
+            Text(
+                text = "No satellite data available yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+            val currentTime = dateFormat.format(Date())
+
+            Text(
+                text = "Last Updated: $currentTime",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            satellites.forEachIndexed { index, satellite ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = satellite.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Surface(
+                                modifier = Modifier.size(12.dp),
+                                shape = MaterialTheme.shapes.small,
+                                color = when (satellite.id) {
+                                    25544 -> MaterialTheme.colorScheme.error
+                                    33591 -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.primaryContainer
+                                }
+                            ) {}
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        ApiDataRow("NORAD ID", satellite.id.toString())
+                        ApiDataRow("Type", satellite.type)
+                        ApiDataRow("Latitude", "${String.format("%.6f", satellite.latitude)}°")
+                        ApiDataRow("Longitude", "${String.format("%.6f", satellite.longitude)}°")
+                        ApiDataRow("Altitude", "${String.format("%.2f", satellite.altitude)} km")
+                        ApiDataRow("Position X", "${String.format("%.2f", satellite.x)} km")
+                        ApiDataRow("Position Y", "${String.format("%.2f", satellite.y)} km")
+                        ApiDataRow("Position Z", "${String.format("%.2f", satellite.z)} km")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ApiDataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

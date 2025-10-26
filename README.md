@@ -7,6 +7,7 @@ A real-time satellite tracking application that displays the International Space
 - **Real-time Satellite Tracking**: Fetches live satellite positions from the N2YO API every 10 seconds
 - **Interactive 3D Globe**: Rotate and zoom the Earth using touch/mouse controls
 - **Three Satellites**: Tracks ISS, NOAA 19, and GPS BIIF-1
+- **Custom Splash Screen**: 3-second animated splash screen with app logo
 - **MVVM Architecture**: Clean separation of concerns with ViewModel and Repository pattern
 - **Jetpack Compose UI**: Modern Android UI toolkit
 - **WebView with Three.js**: High-performance 3D rendering
@@ -19,6 +20,7 @@ A real-time satellite tracking application that displays the International Space
 - **Networking**: Retrofit2 + Moshi
 - **Async Processing**: Kotlin Coroutines
 - **3D Rendering**: Three.js (via WebView)
+- **Splash Screen**: AndroidX Core SplashScreen API
 
 ## Setup Instructions
 
@@ -46,6 +48,27 @@ private val apiKey = "YOUR_API_KEY_HERE"  // Replace this with your actual API k
 2. Sync Gradle files (if not already synced)
 3. Connect an Android device or start an emulator (API level 27 or higher)
 4. Click "Run" or press Shift+F10
+
+## Splash Screen Configuration
+
+The app features a custom splash screen that displays for 3 seconds on app launch.
+
+### Customizing the Splash Screen
+
+**To adjust the logo size:**
+1. Open `app/src/main/res/drawable/sat_trak_logo_scaled.xml`
+2. Modify the `android:width` and `android:height` values (currently 120dp):
+   - Smaller logo: 100dp x 100dp
+   - Larger logo: 150dp x 150dp
+
+**To change the display duration:**
+1. Open `app/src/main/res/values/themes.xml`
+2. Find the `Theme.Sat_Trak.SplashScreen` style
+3. Modify `windowSplashScreenAnimationDuration` (currently 3000ms = 3 seconds)
+
+**To replace the logo:**
+1. Add your logo image to `app/src/main/res/drawable/`
+2. Update `sat_trak_logo_scaled.xml` to reference your new logo
 
 ## Project Structure
 
@@ -99,89 +122,28 @@ Z = -Total Radius × cos(latitude) × sin(longitude)
 - **Observer Location**: (0°, 0°) - Equator at Prime Meridian
 - **Observer Altitude**: 0 meters
 - **Update Interval**: 10 seconds
-- **API Seconds Parameter**: 1 (current position only)
-
-## Tracked Satellites
-
-| Satellite | NORAD ID | Type |
-|-----------|----------|------|
-| ISS | 25544 | Space Station |
-| NOAA 19 | 33591 | Weather Satellite |
-| GPS BIIF-1 | 36585 | GPS Satellite |
-
-## User Controls
-
-### Mouse Controls
-- **Click + Drag**: Rotate the globe
-- **Scroll Wheel**: Zoom in/out
-
-### Touch Controls
-- **Single Finger Drag**: Rotate the globe
-- **Pinch**: Zoom in/out (via scroll simulation)
-
-## Requirements
-
-- **Minimum SDK**: Android 8.1 (API 27)
-- **Target SDK**: Android 15 (API 36)
-- **Internet Connection**: Required for API calls
-- **N2YO API Key**: Required (free tier available)
 
 ## Dependencies
 
-```kotlin
-// Compose
-androidx.compose:compose-bom:2024.10.00
-androidx.activity:activity-compose:1.9.3
-androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6
+Key dependencies used in this project:
 
-// Networking
-com.squareup.retrofit2:retrofit:2.9.0
-com.squareup.retrofit2:converter-moshi:2.9.0
+- `androidx.core:core-splashscreen:1.0.1` - Splash screen API
+- `com.squareup.retrofit2:retrofit` - HTTP client
+- `com.squareup.retrofit2:converter-moshi` - JSON converter
+- `com.squareup.moshi:moshi-kotlin` - JSON parsing
+- `org.jetbrains.kotlinx:kotlinx-coroutines-android` - Coroutines
+- Jetpack Compose BOM - UI framework
 
-// JSON Parsing
-com.squareup.moshi:moshi-kotlin:1.15.1
+## Minimum Requirements
 
-// Coroutines
-org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0
-```
-
-## Troubleshooting
-
-### API Errors
-- **Check API Key**: Ensure you've replaced `YOUR_API_KEY_HERE` with your actual key
-- **Rate Limiting**: Free tier has 1000 requests/hour limit
-- **Network Connection**: Verify device has internet access
-
-### Build Errors
-- **Sync Gradle**: File → Sync Project with Gradle Files
-- **Clean Build**: Build → Clean Project, then Build → Rebuild Project
-- **Invalidate Caches**: File → Invalidate Caches / Restart
-
-### WebView Issues
-- **Enable JavaScript**: Already enabled in `GlobeWebView.kt`
-- **Internet Permission**: Already added in `AndroidManifest.xml`
-
-## Future Enhancements
-
-- Add more satellites
-- Display satellite names on the globe
-- Add orbital path visualization
-- Implement satellite search functionality
-- Add location picker for observer position
-- Display satellite details (speed, orbit time, etc.)
-- Offline mode with cached data
+- **minSdk**: 27 (Android 8.1 Oreo)
+- **targetSdk**: 36
+- **compileSdk**: 36
 
 ## License
 
-This is an educational project for classroom and museum use.
-
-## Credits
-
-- **N2YO API**: Satellite tracking data
-- **Three.js**: 3D rendering library
-- **Jetpack Compose**: Modern Android UI toolkit
+This project is open source and available for educational purposes.
 
 ---
 
 **Note**: Replace `YOUR_API_KEY_HERE` in `SatelliteRepository.kt` before running the app!
-
