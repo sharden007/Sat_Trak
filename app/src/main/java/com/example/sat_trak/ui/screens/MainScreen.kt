@@ -1,6 +1,9 @@
 package com.example.sat_trak.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +25,8 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     var selectedSatellite by remember { mutableStateOf<SatelliteData?>(null) }
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
+    var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 3D Globe WebView
@@ -31,6 +36,10 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             onSatelliteClick = { satellite ->
                 selectedSatellite = satellite
                 showBottomSheet = true
+            },
+            onZoomControlsReady = { zoomIn, zoomOut ->
+                onZoomIn = zoomIn
+                onZoomOut = zoomOut
             }
         )
 
@@ -103,6 +112,42 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
+            }
+        }
+
+        // Zoom Controls
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Zoom In Button
+            FloatingActionButton(
+                onClick = { onZoomIn?.invoke() },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Zoom In",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Zoom Out Button
+            FloatingActionButton(
+                onClick = { onZoomOut?.invoke() },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Remove,
+                    contentDescription = "Zoom Out",
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }

@@ -15,7 +15,8 @@ import com.example.sat_trak.data.models.SatelliteData
 fun GlobeWebView(
     satellites: List<SatelliteData>,
     modifier: Modifier = Modifier,
-    onSatelliteClick: (SatelliteData) -> Unit = {}
+    onSatelliteClick: (SatelliteData) -> Unit = {},
+    onZoomControlsReady: ((zoomIn: () -> Unit, zoomOut: () -> Unit) -> Unit)? = null
 ) {
     AndroidView(
         modifier = modifier.fillMaxSize(),
@@ -54,6 +55,12 @@ fun GlobeWebView(
                     null
                 )
             }
+
+            // Set up zoom controls
+            onZoomControlsReady?.invoke(
+                zoomIn = { webView.evaluateJavascript("zoomIn();", null) },
+                zoomOut = { webView.evaluateJavascript("zoomOut();", null) }
+            )
         }
     )
 
@@ -139,16 +146,25 @@ private fun getHtmlContent(): String {
             earthGroup = new THREE.Group();
             scene.add(earthGroup);
 
-            // Create Earth with improved appearance
-            const geometry = new THREE.SphereGeometry(6371, 64, 64);
+            // Create Earth with realistic land/water appearance
+            const geometry = new THREE.SphereGeometry(6371, 128, 128);
+            
+            // Create custom shader material with land and ocean colors
             const material = new THREE.MeshPhongMaterial({
-                color: 0x2244ff,
+                map: createEarthTexture(),
+                bumpMap: createBumpTexture(),
+                bumpScale: 50,
+                specular: 0x333333,
+                shininess: 15,
                 emissive: 0x112244,
-                shininess: 30,
-                specular: 0x555555
+                emissiveIntensity: 0.3
             });
+            
             earth = new THREE.Mesh(geometry, material);
             earthGroup.add(earth);
+
+            // Add continent labels
+            addContinentLabels();
 
             // Add equator line for reference
             const equatorGeometry = new THREE.TorusGeometry(6371, 10, 16, 100);
@@ -190,6 +206,175 @@ private fun getHtmlContent(): String {
             window.addEventListener('resize', onWindowResize);
 
             animate();
+        }
+
+        // Create realistic Earth texture with continents and oceans
+        function createEarthTexture() {
+            const size = 2048;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const context = canvas.getContext('2d');
+
+            // Ocean color (deep blue)
+            context.fillStyle = '#0a4d8f';
+            context.fillRect(0, 0, size, size);
+
+            // Draw continents with approximate shapes
+            context.fillStyle = '#2d5016'; // Dark green for land
+            
+            // Africa
+            drawContinent(context, size, 0.5, 0.5, [
+                [0.42, 0.35], [0.58, 0.35], [0.60, 0.42], [0.62, 0.55],
+                [0.58, 0.70], [0.48, 0.72], [0.42, 0.65], [0.40, 0.50]
+            ]);
+            
+            // Europe
+            drawContinent(context, size, 0.5, 0.3, [
+                [0.48, 0.20], [0.58, 0.18], [0.62, 0.25], [0.60, 0.32],
+                [0.52, 0.35], [0.46, 0.30]
+            ]);
+            
+            // Asia
+            drawContinent(context, size, 0.7, 0.3, [
+                [0.60, 0.15], [0.85, 0.12], [0.92, 0.25], [0.88, 0.40],
+                [0.75, 0.38], [0.65, 0.35], [0.62, 0.25]
+            ]);
+            
+            // North America
+            drawContinent(context, size, 0.2, 0.25, [
+                [0.10, 0.15], [0.25, 0.10], [0.35, 0.15], [0.38, 0.28],
+                [0.32, 0.42], [0.20, 0.45], [0.12, 0.38], [0.08, 0.25]
+            ]);
+            
+            // South America
+            drawContinent(context, size, 0.28, 0.6, [
+                [0.25, 0.48], [0.32, 0.48], [0.35, 0.55], [0.33, 0.68],
+                [0.28, 0.72], [0.23, 0.65], [0.22, 0.52]
+            ]);
+            
+            // Australia
+            drawContinent(context, size, 0.8, 0.65, [
+                [0.75, 0.62], [0.85, 0.60], [0.88, 0.68], [0.82, 0.72],
+                [0.74, 0.70]
+            ]);
+            
+            // Antarctica (bottom strip)
+            context.fillRect(0, size * 0.85, size, size * 0.15);
+
+            // Add some texture variation
+            addLandTexture(context, size);
+
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        function drawContinent(context, size, centerX, centerY, points) {
+            context.beginPath();
+            points.forEach((point, index) => {
+                const x = point[0] * size;
+                const y = point[1] * size;
+                if (index === 0) {
+                    context.moveTo(x, y);
+                } else {
+                    context.lineTo(x, y);
+                }
+            });
+            context.closePath();
+            context.fill();
+        }
+
+        function addLandTexture(context, size) {
+            // Add subtle variations to land masses
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * size;
+                const y = Math.random() * size;
+                const imageData = context.getImageData(x, y, 1, 1);
+                const pixel = imageData.data;
+                
+                // Only add texture to land (green areas)
+                if (pixel[1] > pixel[2]) {
+                    context.fillStyle = Math.random() > 0.5 ? '#3d6826' : '#1d4006';
+                    context.fillRect(x, y, 2, 2);
+                }
+            }
+        }
+
+        function createBumpTexture() {
+            const size = 1024;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const context = canvas.getContext('2d');
+
+            // Create a grayscale bump map
+            context.fillStyle = '#808080';
+            context.fillRect(0, 0, size, size);
+
+            // Add random elevation for mountains
+            for (let i = 0; i < 3000; i++) {
+                const x = Math.random() * size;
+                const y = Math.random() * size;
+                const brightness = Math.floor(128 + Math.random() * 127);
+                context.fillStyle = `rgb(${'$'}{brightness},${'$'}{brightness},${'$'}{brightness})`;
+                context.fillRect(x, y, 3, 3);
+            }
+
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        function addContinentLabels() {
+            const continents = [
+                { name: 'AFRICA', lat: 0, lon: 20 },
+                { name: 'EUROPE', lat: 50, lon: 10 },
+                { name: 'ASIA', lat: 35, lon: 90 },
+                { name: 'N. AMERICA', lat: 45, lon: -100 },
+                { name: 'S. AMERICA', lat: -15, lon: -60 },
+                { name: 'AUSTRALIA', lat: -25, lon: 135 },
+                { name: 'ANTARCTICA', lat: -80, lon: 0 }
+            ];
+
+            continents.forEach(continent => {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 512;
+                canvas.height = 128;
+                
+                context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                context.font = 'Bold 48px Arial';
+                context.textAlign = 'center';
+                context.fillText(continent.name, 256, 80);
+                
+                // Add text shadow for better visibility
+                context.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+                context.lineWidth = 3;
+                context.strokeText(continent.name, 256, 80);
+
+                const texture = new THREE.Texture(canvas);
+                texture.needsUpdate = true;
+
+                const spriteMaterial = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                
+                // Convert lat/lon to 3D position
+                const radius = 6371 + 50; // Slightly above surface
+                const phi = (90 - continent.lat) * (Math.PI / 180);
+                const theta = (continent.lon + 180) * (Math.PI / 180);
+                
+                sprite.position.x = -(radius * Math.sin(phi) * Math.cos(theta));
+                sprite.position.y = radius * Math.cos(phi);
+                sprite.position.z = radius * Math.sin(phi) * Math.sin(theta);
+                
+                sprite.scale.set(1200, 300, 1);
+                earthGroup.add(sprite);
+            });
         }
 
         function addStars() {
@@ -308,6 +493,15 @@ private fun getHtmlContent(): String {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Zoom functions for button controls
+        function zoomIn() {
+            camera.position.z = Math.max(9000, camera.position.z - 1000);
+        }
+
+        function zoomOut() {
+            camera.position.z = Math.min(30000, camera.position.z + 1000);
         }
 
         function updateSatellites(satellites) {
