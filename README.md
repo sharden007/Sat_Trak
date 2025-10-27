@@ -147,3 +147,61 @@ This project is open source and available for educational purposes.
 ---
 
 **Note**: Replace `YOUR_API_KEY_HERE` in `SatelliteRepository.kt` before running the app!
+
+## Continent Dataset (New)
+
+A detailed, self-contained continent dataset is included for offline use and demos.
+
+- File: `app/src/main/assets/continents.json`
+- Models: `com.example.sat_trak.data.models.*` (see `ContinentModels.kt`)
+- Loader/Validator: `com.example.sat_trak.data.repository.ContinentDataLoader`
+
+Schema overview (per continent object):
+- id: 2–3 letter code (e.g., "AF", "EU")
+- name: Continent name
+- areaKm2: Land area in square kilometers (Long)
+- population: Mid-year population estimate (Long)
+- populationYear: Year of the population estimate (Int)
+- countriesCount: Number of sovereign states (Int)
+- landlockedCountriesCount: Count of landlocked states (Int)
+- coastLengthKm: Approximate coastline length (Int)
+- densityPerKm2: Population density (Double)
+- centroid: { lat, lon }
+- boundingBox: { minLat, minLon, maxLat, maxLon }
+- highestPoint: { name, elevationM, location{ lat, lon } }
+- lowestPoint: { name, elevationM, location{ lat, lon } }
+- extremities: northmost/southmost/eastmost/westmost, each a { name, location{ lat, lon } }
+- subregions: [{ name, countriesCount }]
+- majorOceans: [String]
+- majorLanguages: [String]
+- notes: Free-form notes
+
+Quick usage (Android/Kotlin):
+```kotlin
+// Load from assets
+val continents = ContinentDataLoader.loadFromAssets(context)
+
+// Validate
+val issuesById = ContinentDataLoader.validateAll(continents)
+val nonDensityIssues = issuesById.mapValues { (_, v) -> v.filterNot { it.startsWith("densityPerKm2") } }
+if (nonDensityIssues.isNotEmpty()) {
+    // handle/report problems
+}
+
+// Example: find Europe
+val europe = continents.firstOrNull { it.id == "EU" }
+```
+
+Notes
+- All values are approximate and suitable for visualization and general reference (not authoritative).
+- Validation tolerates density approximation differences due to rounding and heterogeneous sources.
+- You can extend or replace `continents.json` with additional fields; update `ContinentModels.kt` accordingly.
+
+### Run tests (Windows cmd)
+
+```bat
+cd C:\Users\Shawn\AndroidStudioProjects\Sat_Trak
+gradlew.bat --no-daemon test --console=plain --rerun-tasks
+```
+
+Instrumented tests (require an emulator/device) will attempt to load the assets file and validate it.
