@@ -177,19 +177,53 @@ private fun getHtmlContent(): String {
 
             // Create Earth sphere with deep blue oceans
             const geometry = new THREE.SphereGeometry(6371, 256, 256);
+            
+            // Create a canvas texture for the Earth with landmasses
+            const canvas = document.createElement('canvas');
+            canvas.width = 2048;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with ocean blue
+            ctx.fillStyle = '#1a4d8f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw landmasses in tan/beige
+            ctx.fillStyle = '#d4a673';
+            ctx.strokeStyle = '#8b6914';
+            ctx.lineWidth = 2;
+            
+            const continents = getContinentData();
+            continents.forEach(continent => {
+                ctx.beginPath();
+                continent.coordinates.forEach((coord, i) => {
+                    // Convert lat/lon to canvas coordinates
+                    const x = ((coord[1] + 180) / 360) * canvas.width;
+                    const y = ((90 - coord[0]) / 180) * canvas.height;
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            });
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            
             const material = new THREE.MeshPhongMaterial({
-                color: 0x1a4d8f,  // Deep ocean blue
+                map: texture,
                 specular: 0x3366aa,
                 shininess: 30,
                 emissive: 0x0a2a5a,
-                emissiveIntensity: 0.3
+                emissiveIntensity: 0.2
             });
             
             earth = new THREE.Mesh(geometry, material);
             earthGroup.add(earth);
-
-            // Add realistic brown landmasses
-            addLandmasses();
             
             // Add continent labels
             addContinentLabels();
@@ -237,7 +271,7 @@ private fun getHtmlContent(): String {
                 button.innerHTML = '🌍 Rotation: Realistic';
                 button.style.background = 'rgba(76, 175, 80, 0.8)';
             } else {
-                button.innerHTML = '🌍 Rotation: Visual Speed';
+                button.innerHTML = '🌍 Rotation: Simulated';
                 button.style.background = 'rgba(0, 0, 0, 0.8)';
             }
         }
@@ -252,133 +286,202 @@ private fun getHtmlContent(): String {
         }
 
         function createLandmassOnSphere(coordinates) {
-            // Create filled landmass using proper triangulation
-            const vertices = [];
-            const indices = [];
+            // Simple approach: Create individual triangles using earcut algorithm approximation
+            // For now, use a simpler filled polygon approach
             
-            // Calculate center point
-            const centerLat = coordinates.reduce((sum, c) => sum + c[0], 0) / coordinates.length;
-            const centerLon = coordinates.reduce((sum, c) => sum + c[1], 0) / coordinates.length;
-            const centerPos = latLonToVector3(centerLat, centerLon, 6371 + 10);
-            
-            // Add all edge vertices
-            const edgeVertices = [];
-            for (let i = 0; i < coordinates.length; i++) {
-                const pos = latLonToVector3(coordinates[i][0], coordinates[i][1], 6371 + 10);
-                vertices.push(pos.x, pos.y, pos.z);
-                edgeVertices.push(pos);
-            }
-            
-            // Add center vertex
-            const centerIndex = vertices.length / 3;
-            vertices.push(centerPos.x, centerPos.y, centerPos.z);
-            
-            // Create triangle fan from center to all edges
-            for (let i = 0; i < coordinates.length; i++) {
-                const next = (i + 1) % coordinates.length;
-                indices.push(centerIndex, i, next);
-            }
-            
-            // Create the filled geometry
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setIndex(indices);
-            geometry.computeVertexNormals();
-            
-            // Brown material for landmass fill
-            const material = new THREE.MeshPhongMaterial({
-                color: 0xa89968,  // Sandy brown
-                emissive: 0x7a6545,
-                emissiveIntensity: 0.25,
-                side: THREE.DoubleSide,
-                flatShading: false,
-                shininess: 10
+            const points = coordinates.map(coord => {
+                return latLonToVector3(coord[0], coord[1], 6371 + 50);
             });
             
-            const mesh = new THREE.Mesh(geometry, material);
+            // Use ShapeGeometry approach - create shape on plane then map to sphere
+            const shape = new THREE.Shape();
+            
+            // Convert 3D points to 2D for shape (using lat/lon directly)
+            coordinates.forEach((coord, i) => {
+                const lat = coord[0];
+                const lon = coord[1];
+                if (i === 0) {
+                    shape.moveTo(lon, lat);
+                } else {
+                    shape.lineTo(lon, lat);
+                }
+            });
+            shape.closePath();
+            
+            const shapeGeometry = new THREE.ShapeGeometry(shape);
+            const positions = shapeGeometry.attributes.position;
+            
+            // Map the 2D shape vertices to 3D sphere surface
+            for (let i = 0; i < positions.count; i++) {
+                const lon = positions.getX(i);
+                const lat = positions.getY(i);
+                const pos = latLonToVector3(lat, lon, 6371 + 50);
+                positions.setXYZ(i, pos.x, pos.y, pos.z);
+            }
+            
+            positions.needsUpdate = true;
+            shapeGeometry.computeVertexNormals();
+            
+            // Bright, highly visible material
+            const material = new THREE.MeshBasicMaterial({
+                color: 0xe6d7b8,  // Light sandy beige
+                side: THREE.DoubleSide,
+                transparent: false
+            });
+            
+            const mesh = new THREE.Mesh(shapeGeometry, material);
             earthGroup.add(mesh);
             
-            // Add thicker outline for definition
+            // Add outline with higher altitude
             const outlinePoints = coordinates.map(coord => 
-                latLonToVector3(coord[0], coord[1], 6371 + 12)
+                latLonToVector3(coord[0], coord[1], 6371 + 55)
             );
             outlinePoints.push(outlinePoints[0].clone());
             
-            const curve = new THREE.CatmullRomCurve3(outlinePoints);
-            const tubeGeometry = new THREE.TubeGeometry(curve, outlinePoints.length * 4, 25, 8, false);
-            const tubeMaterial = new THREE.MeshPhongMaterial({
-                color: 0x7a5d3a,  // Darker brown outline
-                emissive: 0x5a4321,
-                emissiveIntensity: 0.3
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(outlinePoints);
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x8b7355,  // Brown outline
+                linewidth: 3
             });
-            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
-            earthGroup.add(tube);
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            earthGroup.add(line);
         }
 
         function getContinentData() {
-            // Accurate continent outlines
+            // More detailed and accurate continent outlines
             return [
-                {
-                    name: 'Africa',
-                    coordinates: [
-                        [37, -6], [36, 0], [37, 10], [32, 22], [31, 32], [29, 35],
-                        [24, 37], [15, 39], [12, 43], [4, 51], [-1, 42], [-11, 43],
-                        [-17, 49], [-26, 49], [-34, 28], [-35, 18], [-22, 15], [-12, 13],
-                        [0, 10], [10, 15], [11, 20], [15, 10], [23, 20], [30, 32],
-                        [35, 10], [37, -6]
-                    ]
-                },
-                {
-                    name: 'Europe',
-                    coordinates: [
-                        [71, 26], [70, 31], [68, 40], [66, 48], [60, 60], [56, 63],
-                        [54, 66], [50, 60], [48, 52], [43, 44], [40, 36], [36, 25],
-                        [37, 12], [40, 0], [43, -9], [48, -2], [52, 8], [58, 14],
-                        [65, 22], [71, 26]
-                    ]
-                },
-                {
-                    name: 'Asia',
-                    coordinates: [
-                        [77, 105], [75, 115], [72, 130], [68, 145], [64, 160], [58, 170],
-                        [50, 171], [42, 166], [35, 150], [28, 135], [20, 120], [10, 105],
-                        [5, 95], [0, 80], [8, 70], [20, 68], [30, 75], [36, 95],
-                        [43, 110], [50, 125], [58, 115], [65, 95], [68, 70], [65, 55],
-                        [58, 50], [55, 55], [60, 75], [70, 90], [76, 100], [77, 105]
-                    ]
-                },
                 {
                     name: 'North America',
                     coordinates: [
-                        [83, -95], [80, -85], [75, -75], [70, -68], [60, -65], [50, -55],
-                        [48, -125], [55, -135], [65, -145], [72, -165], [70, 178], [60, 165],
-                        [55, -168], [50, -155], [45, -145], [35, -125], [28, -115], [15, -112],
-                        [15, -90], [25, -82], [35, -80], [45, -75], [55, -75], [65, -85],
-                        [75, -90], [83, -95]
+                        [71.5, -156], [70, -141], [69, -135], [68, -133], [66, -139], [64, -141],
+                        [60, -139], [58, -137], [56, -133], [54, -130], [52, -128], [49, -123],
+                        [48.5, -125], [49, -127], [50, -128], [51, -128], [52, -131], [54, -133],
+                        [58, -135], [60, -138], [61, -142], [62, -145], [64, -147], [65, -151],
+                        [66, -156], [67, -161], [68, -165], [69, -168], [70, -172], [71, -177],
+                        [70.5, 178], [69, 175], [66, 172], [63, 169], [60, 167], [58, 170],
+                        [56, 172], [54, 169], [52, 166], [51, 162], [52, 158], [54, 154],
+                        [57, 161], [60, 165], [62, 168], [63, 172], [64, 175], [65, 177],
+                        [60, 170], [58, 165], [55, 160], [53, 156], [51, 152], [52, 148],
+                        [54, 145], [56, 142], [58, 140], [60, 138], [62, 136], [64, 134],
+                        [66, 132], [68, 135], [69, 140], [70, 145], [71, 150], [71.5, 154],
+                        [71, 158], [70, 162], [69, 165], [68, 167], [67, 163], [66, 159],
+                        [65, 155], [64, 151], [62, 147], [60, 144], [58, 141], [57, 138],
+                        [60, -65], [58, -64], [56, -63], [54, -62], [52, -61], [50, -60],
+                        [48, -58], [47.5, -52], [49, -50], [51, -52], [53, -55], [55, -58],
+                        [57, -61], [59, -63], [61, -64], [63, -65], [65, -67], [67, -70],
+                        [69, -73], [70, -77], [71, -82], [72, -87], [73, -92], [74, -97],
+                        [75, -102], [76, -107], [77, -112], [78, -118], [79, -124], [79.5, -130],
+                        [79, -136], [78, -142], [77, -148], [75, -153], [73, -158], [71.5, -156]
                     ]
                 },
                 {
                     name: 'South America',
                     coordinates: [
-                        [12, -72], [8, -65], [0, -60], [-8, -55], [-18, -57], [-28, -65],
-                        [-38, -72], [-48, -75], [-55, -70], [-54, -67], [-48, -68], [-38, -63],
-                        [-28, -58], [-18, -54], [-8, -58], [2, -66], [8, -70], [12, -72]
+                        [12, -72], [11, -71], [10, -70], [8, -69], [6, -68], [4, -67],
+                        [2, -66], [0, -65], [-2, -64], [-4, -63], [-6, -62], [-8, -61],
+                        [-10, -60], [-12, -59], [-14, -58], [-16, -57.5], [-18, -57],
+                        [-20, -58], [-22, -59], [-24, -60], [-26, -62], [-28, -64],
+                        [-30, -66], [-32, -68], [-34, -69.5], [-36, -71], [-38, -72],
+                        [-40, -73], [-42, -73.5], [-44, -74], [-46, -74.5], [-48, -75],
+                        [-50, -75], [-52, -74.5], [-54, -74], [-55, -73], [-55.5, -72],
+                        [-55, -71], [-54, -70], [-53, -69], [-52, -68.5], [-50, -68],
+                        [-48, -67.5], [-46, -67], [-44, -66.5], [-42, -66], [-40, -65.5],
+                        [-38, -65], [-36, -64.5], [-34, -64], [-32, -63.5], [-30, -63],
+                        [-28, -62], [-26, -61], [-24, -60], [-22, -59], [-20, -58],
+                        [-18, -57], [-16, -56.5], [-14, -56], [-12, -55.5], [-10, -55],
+                        [-8, -55], [-6, -55.5], [-4, -56], [-2, -57], [0, -58],
+                        [2, -60], [4, -62], [6, -64], [7, -66], [8, -68], [9, -70],
+                        [10, -71], [11, -71.5], [12, -72]
+                    ]
+                },
+                {
+                    name: 'Africa',
+                    coordinates: [
+                        [37, 10], [36, 12], [34, 15], [32, 18], [30, 20], [28, 22],
+                        [26, 25], [24, 28], [22, 30], [20, 32], [18, 34], [16, 36],
+                        [14, 37], [12, 38], [10, 40], [8, 42], [6, 44], [4, 46],
+                        [2, 48], [0, 50], [-2, 51], [-4, 51], [-6, 51], [-8, 51],
+                        [-10, 50], [-12, 49], [-14, 48], [-16, 48], [-18, 48.5], [-20, 49],
+                        [-22, 49.5], [-24, 50], [-26, 50], [-28, 49], [-30, 48], [-32, 46],
+                        [-34, 44], [-35, 40], [-35, 36], [-34.5, 32], [-34, 28], [-33, 24],
+                        [-32, 20], [-30, 18], [-28, 16], [-26, 15], [-24, 14], [-22, 14],
+                        [-20, 14], [-18, 13.5], [-16, 13], [-14, 13], [-12, 13], [-10, 13],
+                        [-8, 13.5], [-6, 14], [-4, 14.5], [-2, 15], [0, 15], [2, 15],
+                        [4, 15.5], [6, 16], [8, 17], [10, 18], [12, 19], [14, 20],
+                        [16, 22], [18, 24], [20, 26], [22, 28], [24, 30], [26, 32],
+                        [28, 34], [30, 35], [32, 36], [33, 34], [34, 32], [35, 28],
+                        [36, 24], [37, 20], [37.5, 16], [37, 12], [37, 10]
+                    ]
+                },
+                {
+                    name: 'Europe',
+                    coordinates: [
+                        [71, 25], [70, 28], [69, 30], [68, 33], [67, 36], [66, 40],
+                        [65, 44], [64, 48], [63, 52], [62, 56], [60, 60], [58, 62],
+                        [56, 64], [54, 65], [52, 66], [50, 65], [48, 64], [47, 62],
+                        [46, 60], [45, 58], [44, 56], [43, 54], [42, 52], [41, 50],
+                        [40, 48], [39, 46], [38, 44], [37, 42], [36.5, 40], [36, 38],
+                        [36, 36], [36.5, 34], [37, 32], [37.5, 30], [38, 28], [38.5, 26],
+                        [39, 24], [39.5, 22], [40, 20], [40, 18], [40, 16], [40, 14],
+                        [40.5, 12], [41, 10], [41.5, 8], [42, 6], [42.5, 4], [43, 2],
+                        [43.5, 0], [44, -2], [44.5, -4], [45, -6], [45.5, -8], [46, -9],
+                        [47, -8], [48, -6], [49, -4], [50, -2], [51, 0], [52, 2],
+                        [53, 4], [54, 6], [55, 8], [56, 10], [57, 12], [58, 14],
+                        [59, 16], [60, 18], [62, 20], [64, 22], [66, 23], [68, 24],
+                        [70, 24.5], [71, 25]
+                    ]
+                },
+                {
+                    name: 'Asia',
+                    coordinates: [
+                        [77, 70], [76, 75], [75, 80], [74, 85], [73, 90], [72, 95],
+                        [71, 100], [70, 105], [69, 110], [68, 115], [67, 120], [66, 125],
+                        [65, 130], [64, 135], [63, 140], [62, 145], [61, 150], [60, 155],
+                        [58, 160], [56, 165], [54, 169], [52, 171], [50, 172], [48, 170],
+                        [46, 168], [44, 166], [42, 164], [40, 162], [38, 160], [36, 158],
+                        [34, 156], [32, 154], [30, 152], [28, 150], [26, 148], [24, 146],
+                        [22, 144], [20, 142], [18, 140], [16, 138], [14, 136], [12, 134],
+                        [10, 132], [8, 130], [6, 128], [4, 126], [2, 124], [0, 122],
+                        [-2, 120], [-4, 118], [-6, 116], [-8, 114], [-10, 112], [-11, 110],
+                        [-10, 108], [-8, 106], [-6, 104], [-4, 102], [-2, 100], [0, 98],
+                        [2, 96], [4, 94], [6, 92], [8, 90], [10, 88], [12, 86],
+                        [14, 84], [16, 82], [18, 80], [20, 78], [22, 76], [24, 74],
+                        [26, 73], [28, 72], [30, 71], [32, 70.5], [34, 70], [36, 70],
+                        [38, 71], [40, 72], [42, 74], [44, 76], [46, 78], [48, 80],
+                        [50, 82], [52, 84], [54, 86], [56, 88], [58, 90], [60, 92],
+                        [62, 94], [64, 96], [66, 98], [68, 100], [70, 102], [72, 105],
+                        [74, 108], [75, 112], [76, 116], [77, 120], [77.5, 125], [77, 130],
+                        [76, 135], [75, 138], [74, 140], [72, 138], [70, 135], [68, 132],
+                        [66, 128], [65, 124], [64, 120], [63, 116], [62, 112], [61, 108],
+                        [60, 104], [59, 100], [58, 96], [57, 92], [56, 88], [55, 84],
+                        [55, 80], [56, 76], [58, 72], [60, 68], [62, 65], [64, 62],
+                        [66, 60], [68, 58], [70, 57], [72, 58], [74, 60], [75, 64],
+                        [76, 68], [77, 70]
                     ]
                 },
                 {
                     name: 'Australia',
                     coordinates: [
-                        [-10, 142], [-12, 150], [-18, 154], [-25, 153], [-33, 151],
-                        [-38, 145], [-38, 138], [-35, 130], [-28, 125], [-22, 122],
-                        [-15, 123], [-11, 132], [-10, 142]
+                        [-10, 142], [-11, 143], [-12, 144], [-13, 145], [-14, 146], [-16, 148],
+                        [-18, 150], [-20, 152], [-22, 153], [-24, 153.5], [-26, 153.5], [-28, 153],
+                        [-30, 152.5], [-32, 152], [-34, 151], [-36, 150], [-38, 148], [-39, 146],
+                        [-38.5, 144], [-38, 142], [-37.5, 140], [-37, 138], [-36, 136], [-35, 134],
+                        [-34, 132], [-33, 130], [-32, 128], [-31, 126], [-30, 125], [-28, 124],
+                        [-26, 123.5], [-24, 123], [-22, 122.5], [-20, 122], [-18, 122], [-16, 122.5],
+                        [-14, 123], [-12, 124], [-11, 126], [-10.5, 128], [-10, 130], [-10, 132],
+                        [-10, 134], [-10, 136], [-10, 138], [-10, 140], [-10, 142]
                     ]
                 },
                 {
                     name: 'Antarctica',
                     coordinates: [
-                        [-65, -60], [-68, -40], [-72, -20], [-76, 0], [-80, 20], [-84, 40],
-                        [-87, 70], [-85, 100], [-80, 130], [-75, 160], [-70, -170],
-                        [-66, -120], [-64, -80], [-65, -60]
+                        [-60, -60], [-62, -50], [-64, -40], [-66, -30], [-68, -20], [-70, -10],
+                        [-72, 0], [-74, 10], [-76, 20], [-78, 30], [-80, 40], [-82, 50],
+                        [-84, 60], [-85, 70], [-86, 80], [-87, 90], [-87, 100], [-86, 110],
+                        [-85, 120], [-83, 130], [-81, 140], [-79, 150], [-77, 160], [-75, 170],
+                        [-72, 180], [-70, -170], [-68, -160], [-66, -150], [-64, -140], [-62, -130],
+                        [-61, -120], [-60, -110], [-60, -100], [-60, -90], [-60, -80], [-60, -70],
+                        [-60, -60]
                     ]
                 }
             ];
