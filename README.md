@@ -1,12 +1,16 @@
-# Satellite Tracker - Real-Time 3D Visualization 🛰️🌍
+# Satellite Tracker - Native Android App 🛰️🌍📱
 
-A stunning real-time satellite tracking application featuring an interactive 3D Earth globe powered by Three.js and WebGL. Watch 5 satellites orbit Earth in real-time with beautiful orbital trail visualization.
+**A native Android application** featuring real-time satellite tracking with an interactive 3D Earth globe powered by Three.js and WebGL. Watch 5 satellites orbit Earth in real-time with beautiful orbital trail visualization.
+
+> **Platform:** Android (Kotlin + Jetpack Compose)  
+> **Minimum Android Version:** 8.1 Oreo (API 27)  
+> **Target:** Android 14+ (API 36)
 
 ## 📸 Screenshots
 
 <div align="center">
-  <img src="screenshots/app-overview.png" alt="App Overview" width="800"/>
-  <p><i>Real-time satellite tracking with 3D Earth globe</i></p>
+  <img src="screenshots/app-overview.png" alt="Android App Overview" width="800"/>
+  <p><i>Native Android app - Real-time satellite tracking with 3D Earth globe</i></p>
 </div>
 
 <div align="center">
@@ -20,6 +24,15 @@ A stunning real-time satellite tracking application featuring an interactive 3D 
   <img src="screenshots/api-data.png" alt="API Data" width="400"/>
   <p><i>Left: Satellite detail sheet | Right: Live API data viewer</i></p>
 </div>
+
+## 📱 About This Android App
+
+This is a **native Android application** built with modern Android development tools:
+- Developed in **Kotlin** using **Jetpack Compose** for UI
+- Runs on Android phones and tablets (API 27+)
+- Requires **Android Studio** to build and run
+- Uses WebView to embed Three.js for 3D rendering
+- Designed for Android devices with internet connectivity
 
 ## ✨ Features
 
