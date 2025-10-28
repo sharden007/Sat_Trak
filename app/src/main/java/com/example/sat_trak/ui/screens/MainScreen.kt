@@ -35,6 +35,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     val errorMessage = viewModel.errorMessage.value
 
     var selectedSatellite by remember { mutableStateOf<SatelliteData?>(null) }
+    var userSelectedSatellite by remember { mutableStateOf(false) } // Track if user manually clicked
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
     var showApiDataDialog by remember { mutableStateOf(false) }
@@ -44,6 +45,20 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     // New UI state: trails on/off (trail length is now fixed at 130)
     var showTrails by remember { mutableStateOf(true) }
 
+    // Auto-cycle through satellites for telemetry display (5 seconds each)
+    LaunchedEffect(satellites, userSelectedSatellite) {
+        if (satellites.isNotEmpty() && !userSelectedSatellite) {
+            var currentIndex = 0
+            while (true) {
+                if (!userSelectedSatellite) {
+                    selectedSatellite = satellites[currentIndex % satellites.size]
+                    currentIndex++
+                }
+                kotlinx.coroutines.delay(5000L) // 5 seconds
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // 3D Globe WebView
         GlobeWebView(
@@ -51,6 +66,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize(),
             onSatelliteClick = { satellite ->
                 selectedSatellite = satellite
+                userSelectedSatellite = true // User manually selected
                 showBottomSheet = true
             },
             onZoomControlsReady = { zoomIn, zoomOut ->

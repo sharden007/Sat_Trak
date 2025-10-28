@@ -75,10 +75,13 @@ fun GlobeWebView(
                     @JavascriptInterface
                     fun onSatelliteClicked(satelliteId: Int) {
                         Log.d("GlobeWebView", "Satellite clicked: ID=$satelliteId")
-                        satellites.find { it.id == satelliteId }?.let { satellite ->
-                            Log.d("GlobeWebView", "Found satellite: ${satellite.name}, triggering callback")
-                            onSatelliteClick(satellite)
-                        } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in list")
+                        // Post to main thread to update UI
+                        post {
+                            satellites.find { it.id == satelliteId }?.let { satellite ->
+                                Log.d("GlobeWebView", "Found satellite: ${satellite.name}, triggering callback")
+                                onSatelliteClick(satellite)
+                            } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in list")
+                        }
                     }
 
                     @Suppress("unused")
@@ -216,8 +219,28 @@ private fun getHtmlContent(): String {
 
     // Apply configuration changes - NOTE: We're using a photorealistic texture now, not canvas-drawn continents
     function applyConfig(){
-        // This function is kept for compatibility but does nothing since we use real Earth imagery
-        console.log('applyConfig called - using photorealistic Earth texture');
+        // Redraw trails when config changes
+        console.log('applyConfig called - redrawing trails based on config');
+        redrawTrails();
+    }
+
+    // Redraw all trails based on current config
+    function redrawTrails(){
+        // Clear existing trails
+        if(trailsGroup){ 
+            while(trailsGroup.children.length) trailsGroup.remove(trailsGroup.children[0]); 
+        }
+        
+        // Redraw trails if enabled and we have satellites
+        const cfg = getConfig();
+        if(cfg.showTrails && currentSatellites && currentSatellites.length > 0){
+            currentSatellites.forEach(sat => {
+                drawProjectedTrail(sat, cfg.trailSteps || 130);
+            });
+            console.log('Trails redrawn for ' + currentSatellites.length + ' satellites');
+        } else {
+            console.log('Trails cleared (showTrails=' + cfg.showTrails + ')');
+        }
     }
 
     // Simple zoom handlers used by the Android UI
@@ -304,7 +327,7 @@ private fun getHtmlContent(): String {
                 } else {
                     // Simulated: faster for better visualization
                     rotationSpeed = 0.0005;
-                    toggleBtn.textContent = '🌍 Rotation: Simulated Speed';
+                    toggleBtn.textContent = '🌍 Simulated Speed';
                     toggleBtn.style.borderColor = '#4CAF50';
                     console.log('Rotation: Simulated Speed');
                 }
@@ -411,19 +434,34 @@ private fun getHtmlContent(): String {
     }
 
     function onClick(e){
+        console.log('Click detected on canvas');
         const rect = renderer.domElement.getBoundingClientRect();
         const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         const mouse = new THREE.Vector2(x, y);
         const ray = new THREE.Raycaster();
+        // Increase raycaster threshold to make satellites easier to click
+        ray.params.Points.threshold = 200;
         ray.setFromCamera(mouse, camera);
-        const intersects = ray.intersectObjects(satelliteObjects);
+        const intersects = ray.intersectObjects(satelliteObjects, false);
+        console.log('Raycaster check: ' + intersects.length + ' intersections found');
         if(intersects.length > 0){
             const clicked = intersects[0].object;
+            console.log('Clicked object userData:', clicked.userData);
             const sat = currentSatellites.find(s => s.id === clicked.userData.id);
-            if(sat && typeof Android !== 'undefined' && Android.onSatelliteClicked){
-                Android.onSatelliteClicked(sat.id);
+            if(sat){
+                console.log('Found satellite:', sat.name, 'ID:', sat.id);
+                if(typeof Android !== 'undefined' && Android.onSatelliteClicked){
+                    console.log('Calling Android.onSatelliteClicked');
+                    Android.onSatelliteClicked(sat.id);
+                } else {
+                    console.error('Android interface not available');
+                }
+            } else {
+                console.error('Satellite not found in currentSatellites array');
             }
+        } else {
+            console.log('No satellite clicked - click on empty space');
         }
     }
 
