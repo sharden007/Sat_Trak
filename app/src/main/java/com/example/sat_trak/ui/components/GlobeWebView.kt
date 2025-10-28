@@ -226,15 +226,29 @@ private fun getHtmlContent(): String {
                 canvas.width = cfg.useHighResTiles ? 4096 : 2048;
                 canvas.height = cfg.useHighResTiles ? 2048 : 1024;
                 const ctx = canvas.getContext('2d');
+                // Enable anti-aliasing for smoother edges
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
                 ctx.fillStyle = '#1a4d8f'; ctx.fillRect(0,0,canvas.width, canvas.height);
                 const continents = (typeof getContinentData === 'function') ? getContinentData() : [];
-                ctx.fillStyle = '#d4a673'; ctx.strokeStyle = '#8b6914'; ctx.lineWidth = 2;
+                ctx.fillStyle = '#d4a673'; 
+                ctx.strokeStyle = '#8b6914'; 
+                ctx.lineWidth = 3; // Thicker borders
+                ctx.lineJoin = 'round'; // Smoother corners
+                ctx.lineCap = 'round'; // Smoother line ends
                 continents.forEach(cont=>{
                     try{
                         if(Array.isArray(cont.coordinates) && cont.coordinates.length>0){
                             console.log('Drawing continent ' + cont.id + ' with ' + cont.coordinates.length + ' points');
                             ctx.beginPath();
-                            cont.coordinates.forEach((coord,i)=>{ const x=((coord[1]+180)/360)*canvas.width; const y=((90-coord[0])/180)*canvas.height; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+                            cont.coordinates.forEach((coord,i)=>{ 
+                                // coord is [lon, lat] in GeoJSON format
+                                const lon = coord[0];
+                                const lat = coord[1];
+                                const x = ((lon+180)/360)*canvas.width; 
+                                const y = ((90-lat)/180)*canvas.height; 
+                                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
+                            });
                             ctx.closePath(); ctx.fill(); ctx.stroke();
                         } else if(cont.boundingBox){
                             // fallback: draw bounding box rectangle when polygon coords are unavailable
@@ -261,6 +275,10 @@ private fun getHtmlContent(): String {
     let satelliteObjects = []; let satelliteLabels = []; let currentSatellites = [];
     let selectedHighlight = null;
     let highlightedId = null;
+    
+    // Rotation speed control
+    let rotationSpeed = 0.0005; // Simulated speed (default)
+    let isRealTimeSpeed = false; // false = simulated, true = real-time
 
     function init(){
         scene = new THREE.Scene();
@@ -271,9 +289,21 @@ private fun getHtmlContent(): String {
         trailsGroup = new THREE.Group(); earthGroup.add(trailsGroup);
         const geometry = new THREE.SphereGeometry(6371, 256, 256);
         // initial canvas texture
-        const cfg = getConfig(); const canvas = document.createElement('canvas'); canvas.width = cfg.useHighResTiles ? 4096 : 2048; canvas.height = cfg.useHighResTiles ? 2048 : 1024; const ctx = canvas.getContext('2d'); ctx.fillStyle = '#1a4d8f'; ctx.fillRect(0,0,canvas.width, canvas.height);
-        const continents = getContinentData(); ctx.fillStyle = '#d4a673'; ctx.strokeStyle = '#8b6914'; ctx.lineWidth = 2;
-        // Draw continent polygons if available; otherwise draw bounding-box fallbacks.
+        const cfg = getConfig(); 
+        const canvas = document.createElement('canvas'); 
+        canvas.width = cfg.useHighResTiles ? 4096 : 2048; 
+        canvas.height = cfg.useHighResTiles ? 2048 : 1024; 
+        const ctx = canvas.getContext('2d'); 
+        // Enable anti-aliasing for smoother edges
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.fillStyle = '#1a4d8f'; ctx.fillRect(0,0,canvas.width, canvas.height);
+        const continents = getContinentData(); 
+        ctx.fillStyle = '#d4a673'; 
+        ctx.strokeStyle = '#8b6914'; 
+        ctx.lineWidth = 3; // Thicker borders
+        ctx.lineJoin = 'round'; // Smoother corners
+        ctx.lineCap = 'round'; // Smoother line ends
         let usedCanvasTexture = false;
         if(Array.isArray(continents) && continents.length>0){
             continents.forEach(cont=>{
@@ -281,7 +311,14 @@ private fun getHtmlContent(): String {
                     if(Array.isArray(cont.coordinates) && cont.coordinates.length>0){
                         console.log('Drawing continent ' + cont.id + ' with ' + cont.coordinates.length + ' points');
                         ctx.beginPath();
-                        cont.coordinates.forEach((coord,i)=>{ const x=((coord[1]+180)/360)*canvas.width; const y=((90-coord[0])/180)*canvas.height; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+                        cont.coordinates.forEach((coord,i)=>{ 
+                            // coord is [lon, lat] in GeoJSON format
+                            const lon = coord[0];
+                            const lat = coord[1];
+                            const x = ((lon+180)/360)*canvas.width; 
+                            const y = ((90-lat)/180)*canvas.height; 
+                            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
+                        });
                         ctx.closePath(); ctx.fill(); ctx.stroke();
                         usedCanvasTexture = true;
                     } else if(cont.boundingBox){
@@ -337,6 +374,29 @@ private fun getHtmlContent(): String {
         // events
         renderer.domElement.addEventListener('click', onClick);
         window.addEventListener('resize', onWindowResize);
+        
+        // Add rotation toggle button event listener
+        const toggleBtn = document.getElementById('rotationToggle');
+        if(toggleBtn){
+            toggleBtn.addEventListener('click', function(){
+                isRealTimeSpeed = !isRealTimeSpeed;
+                if(isRealTimeSpeed){
+                    // Real-time: Earth rotates 360° in 24 hours = 0.004167°/sec
+                    // At 60fps, that's 0.004167/60 = 0.0000694°/frame
+                    rotationSpeed = 0.0000694 * (Math.PI / 180); // Convert to radians
+                    toggleBtn.textContent = '🌍 Rotation: Real-Time Speed';
+                    toggleBtn.style.borderColor = '#2196F3';
+                    console.log('Rotation: Real-Time Speed');
+                } else {
+                    // Simulated: faster for better visualization
+                    rotationSpeed = 0.0005;
+                    toggleBtn.textContent = '🌍 Rotation: Simulated Speed';
+                    toggleBtn.style.borderColor = '#4CAF50';
+                    console.log('Rotation: Simulated Speed');
+                }
+            });
+        }
+        
         animate();
     }
 
@@ -437,7 +497,7 @@ private fun getHtmlContent(): String {
     function animate(){
         requestAnimationFrame(animate);
         earthGroup.rotation.x = 0.4;
-        earthGroup.rotation.y += 0.0005;
+        earthGroup.rotation.y += rotationSpeed;
         if(selectedHighlight && highlightedId != null){
             const obj = satelliteObjects.find(o => o.userData && o.userData.id === highlightedId);
             if(obj){ selectedHighlight.position.copy(obj.position); }
