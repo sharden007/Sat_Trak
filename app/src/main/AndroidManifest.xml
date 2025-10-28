@@ -13,7 +13,8 @@
         android:roundIcon="@drawable/ic_launcher_playstore"
         android:supportsRtl="true"
         android:theme="@style/Theme.Sat_Trak.SplashScreen"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="false"
+        android:hardwareAccelerated="true">
 
         <activity
             android:name=".MainActivity"

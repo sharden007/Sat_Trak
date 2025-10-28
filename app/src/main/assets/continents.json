@@ -1,0 +1,265 @@
+[
+  {
+    "id": "AF",
+    "name": "Africa",
+    "areaKm2": 30370000,
+    "population": 1460000000,
+    "populationYear": 2024,
+    "countriesCount": 54,
+    "landlockedCountriesCount": 16,
+    "coastLengthKm": 30500,
+    "densityPerKm2": 48.07,
+    "centroid": { "lat": 1.5, "lon": 17.5 },
+    "boundingBox": { "minLat": -34.84, "minLon": -17.50, "maxLat": 37.34, "maxLon": 51.27 },
+    "highestPoint": {
+      "name": "Mount Kilimanjaro",
+      "elevationM": 5895,
+      "location": { "lat": -3.067, "lon": 37.355 }
+    },
+    "lowestPoint": {
+      "name": "Lake Assal",
+      "elevationM": -155,
+      "location": { "lat": 11.66, "lon": 42.41 }
+    },
+    "extremities": {
+      "northmost": { "name": "Ras ben Sakka (Tunisia)", "location": { "lat": 37.55, "lon": 9.68 } },
+      "southmost": { "name": "Cape Agulhas (South Africa)", "location": { "lat": -34.83, "lon": 20.00 } },
+      "eastmost": { "name": "Ras Hafun (Somalia)", "location": { "lat": 10.43, "lon": 51.27 } },
+      "westmost": { "name": "Cap-Vert (Senegal)", "location": { "lat": 14.73, "lon": -17.50 } }
+    },
+    "subregions": [
+      { "name": "Northern Africa", "countriesCount": 7 },
+      { "name": "Western Africa", "countriesCount": 16 },
+      { "name": "Middle Africa", "countriesCount": 9 },
+      { "name": "Eastern Africa", "countriesCount": 18 },
+      { "name": "Southern Africa", "countriesCount": 5 }
+    ],
+    "majorOceans": ["Atlantic Ocean", "Indian Ocean"],
+    "majorLanguages": ["Arabic", "Swahili", "French", "English", "Hausa", "Amharic", "Yoruba", "Zulu"],
+    "notes": "Values are approximate; population is mid-2024 estimate. Subregion counts follow UN M49 scheme."
+  },
+  {
+    "id": "AN",
+    "name": "Antarctica",
+    "areaKm2": 14000000,
+    "population": 1100,
+    "populationYear": 2024,
+    "countriesCount": 0,
+    "landlockedCountriesCount": 0,
+    "coastLengthKm": 17968,
+    "densityPerKm2": 0.00008,
+    "centroid": { "lat": -82.86, "lon": 135.0 },
+    "boundingBox": { "minLat": -90.0, "minLon": -180.0, "maxLat": -60.0, "maxLon": 180.0 },
+    "highestPoint": {
+      "name": "Vinson Massif",
+      "elevationM": 4892,
+      "location": { "lat": -78.525, "lon": -85.617 }
+    },
+    "lowestPoint": {
+      "name": "Bentley Subglacial Trench",
+      "elevationM": -2555,
+      "location": { "lat": -80.0, "lon": 115.0 }
+    },
+    "extremities": {
+      "northmost": { "name": "Boundary of Antarctic Circle", "location": { "lat": -66.56, "lon": 0.0 } },
+      "southmost": { "name": "South Pole", "location": { "lat": -90.0, "lon": 0.0 } },
+      "eastmost": { "name": "International Date Line Sector", "location": { "lat": -80.0, "lon": 180.0 } },
+      "westmost": { "name": "International Date Line Sector", "location": { "lat": -80.0, "lon": -180.0 } }
+    },
+    "subregions": [],
+    "majorOceans": ["Southern Ocean"],
+    "majorLanguages": [],
+    "notes": "Population is seasonal research staff. Coast length reflects the ice shelf edge and varies."
+  },
+  {
+    "id": "AS",
+    "name": "Asia",
+    "areaKm2": 44579000,
+    "population": 4800000000,
+    "populationYear": 2024,
+    "countriesCount": 49,
+    "landlockedCountriesCount": 12,
+    "coastLengthKm": 62800,
+    "densityPerKm2": 107.7,
+    "centroid": { "lat": 34.0, "lon": 100.0 },
+    "boundingBox": { "minLat": -11.0, "minLon": 26.0, "maxLat": 81.86, "maxLon": 180.0 },
+    "highestPoint": {
+      "name": "Mount Everest",
+      "elevationM": 8848,
+      "location": { "lat": 27.988, "lon": 86.925 }
+    },
+    "lowestPoint": {
+      "name": "Dead Sea Shore",
+      "elevationM": -430,
+      "location": { "lat": 31.5, "lon": 35.5 }
+    },
+    "extremities": {
+      "northmost": { "name": "Cape Chelyuskin (Russia)", "location": { "lat": 77.73, "lon": 104.15 } },
+      "southmost": { "name": "Rote Island (Indonesia)", "location": { "lat": -11.12, "lon": 123.07 } },
+      "eastmost": { "name": "Big Diomede vicinity", "location": { "lat": 66.07, "lon": 169.05 } },
+      "westmost": { "name": "Cape Baba (Turkey)", "location": { "lat": 39.48, "lon": 26.05 } }
+    },
+    "subregions": [
+      { "name": "Central Asia", "countriesCount": 5 },
+      { "name": "Eastern Asia", "countriesCount": 7 },
+      { "name": "South-Eastern Asia", "countriesCount": 11 },
+      { "name": "Southern Asia", "countriesCount": 9 },
+      { "name": "Western Asia", "countriesCount": 17 }
+    ],
+    "majorOceans": ["Arctic Ocean", "Pacific Ocean", "Indian Ocean"],
+    "majorLanguages": ["Mandarin Chinese", "Hindi", "Arabic", "Bengali", "Japanese", "Russian", "Indonesian"],
+    "notes": "Asian boundaries are defined using UN M49 with transcontinental states handled per common geographic convention."
+  },
+  {
+    "id": "EU",
+    "name": "Europe",
+    "areaKm2": 10180000,
+    "population": 745000000,
+    "populationYear": 2024,
+    "countriesCount": 44,
+    "landlockedCountriesCount": 17,
+    "coastLengthKm": 38000,
+    "densityPerKm2": 73.2,
+    "centroid": { "lat": 54.5, "lon": 15.25 },
+    "boundingBox": { "minLat": 34.5, "minLon": -31.0, "maxLat": 71.2, "maxLon": 69.0 },
+    "highestPoint": {
+      "name": "Mount Elbrus",
+      "elevationM": 5642,
+      "location": { "lat": 43.349, "lon": 42.445 }
+    },
+    "lowestPoint": {
+      "name": "Caspian Sea Shore",
+      "elevationM": -28,
+      "location": { "lat": 41.0, "lon": 50.0 }
+    },
+    "extremities": {
+      "northmost": { "name": "Nordkinn (Norway)", "location": { "lat": 71.17, "lon": 27.72 } },
+      "southmost": { "name": "Gavdos (Greece)", "location": { "lat": 34.84, "lon": 24.08 } },
+      "eastmost": { "name": "Ural Mountains (Russia)", "location": { "lat": 67.5, "lon": 66.0 } },
+      "westmost": { "name": "Monchique Islet (Azores, Portugal)", "location": { "lat": 39.48, "lon": -31.27 } }
+    },
+    "subregions": [
+      { "name": "Eastern Europe", "countriesCount": 10 },
+      { "name": "Northern Europe", "countriesCount": 10 },
+      { "name": "Southern Europe", "countriesCount": 15 },
+      { "name": "Western Europe", "countriesCount": 9 }
+    ],
+    "majorOceans": ["Arctic Ocean", "Atlantic Ocean"],
+    "majorLanguages": ["Russian", "German", "French", "English", "Italian", "Spanish", "Turkish"],
+    "notes": "Counts vary by definition; coast length excludes islands beyond standard continental shelf definitions."
+  },
+  {
+    "id": "NA",
+    "name": "North America",
+    "areaKm2": 24709000,
+    "population": 602000000,
+    "populationYear": 2024,
+    "countriesCount": 23,
+    "landlockedCountriesCount": 0,
+    "coastLengthKm": 117000,
+    "densityPerKm2": 24.4,
+    "centroid": { "lat": 45.0, "lon": -100.0 },
+    "boundingBox": { "minLat": 7.2, "minLon": -168.0, "maxLat": 83.1, "maxLon": -52.0 },
+    "highestPoint": {
+      "name": "Denali",
+      "elevationM": 6190,
+      "location": { "lat": 63.069, "lon": -151.007 }
+    },
+    "lowestPoint": {
+      "name": "Badwater Basin, Death Valley",
+      "elevationM": -86,
+      "location": { "lat": 36.24, "lon": -116.82 }
+    },
+    "extremities": {
+      "northmost": { "name": "Cape Columbia (Canada)", "location": { "lat": 83.11, "lon": -74.14 } },
+      "southmost": { "name": "Punta Mariato (Panama)", "location": { "lat": 7.20, "lon": -80.89 } },
+      "eastmost": { "name": "Nordostrundingen (Greenland)", "location": { "lat": 81.27, "lon": -11.7 } },
+      "westmost": { "name": "Attu Island (USA)", "location": { "lat": 52.9, "lon": 173.2 } }
+    },
+    "subregions": [
+      { "name": "Caribbean", "countriesCount": 13 },
+      { "name": "Central America", "countriesCount": 7 },
+      { "name": "Northern America", "countriesCount": 3 }
+    ],
+    "majorOceans": ["Arctic Ocean", "Atlantic Ocean", "Pacific Ocean"],
+    "majorLanguages": ["English", "Spanish", "French", "Haitian Creole"],
+    "notes": "Includes Greenland in geographic North America. East/west extremities consider Aleutian arc and Greenland."
+  },
+  {
+    "id": "OC",
+    "name": "Oceania",
+    "areaKm2": 8525989,
+    "population": 44000000,
+    "populationYear": 2024,
+    "countriesCount": 14,
+    "landlockedCountriesCount": 0,
+    "coastLengthKm": 69000,
+    "densityPerKm2": 5.16,
+    "centroid": { "lat": -22.0, "lon": 140.0 },
+    "boundingBox": { "minLat": -47.0, "minLon": 110.0, "maxLat": 0.0, "maxLon": 180.0 },
+    "highestPoint": {
+      "name": "Puncak Jaya",
+      "elevationM": 4884,
+      "location": { "lat": -4.083, "lon": 137.16 }
+    },
+    "lowestPoint": {
+      "name": "Kati Thanda–Lake Eyre",
+      "elevationM": -15,
+      "location": { "lat": -28.37, "lon": 138.08 }
+    },
+    "extremities": {
+      "northmost": { "name": "Raja Ampat (Indonesia, Melanesia)", "location": { "lat": -0.2, "lon": 131.0 } },
+      "southmost": { "name": "Macquarie Island (Australia)", "location": { "lat": -54.50, "lon": 158.95 } },
+      "eastmost": { "name": "Pitcairn Islands vicinity", "location": { "lat": -25.07, "lon": -124.78 } },
+      "westmost": { "name": "Cocos (Keeling) Islands vicinity", "location": { "lat": -12.17, "lon": 96.83 } }
+    },
+    "subregions": [
+      { "name": "Australia and New Zealand", "countriesCount": 2 },
+      { "name": "Melanesia", "countriesCount": 5 },
+      { "name": "Micronesia", "countriesCount": 7 },
+      { "name": "Polynesia", "countriesCount": 0 }
+    ],
+    "majorOceans": ["Indian Ocean", "Pacific Ocean", "Southern Ocean"],
+    "majorLanguages": ["English", "Tok Pisin", "Māori", "Samoan", "Fijian", "Hiri Motu"],
+    "notes": "Definitions vary; subregions follow UN M49. Extremities reflect a broad Oceania footprint and may include territories."
+  },
+  {
+    "id": "SA",
+    "name": "South America",
+    "areaKm2": 17840000,
+    "population": 439000000,
+    "populationYear": 2024,
+    "countriesCount": 12,
+    "landlockedCountriesCount": 2,
+    "coastLengthKm": 25400,
+    "densityPerKm2": 24.6,
+    "centroid": { "lat": -14.0, "lon": -59.0 },
+    "boundingBox": { "minLat": -55.98, "minLon": -81.33, "maxLat": 12.45, "maxLon": -34.79 },
+    "highestPoint": {
+      "name": "Aconcagua",
+      "elevationM": 6961,
+      "location": { "lat": -32.653, "lon": -70.011 }
+    },
+    "lowestPoint": {
+      "name": "Laguna del Carbón",
+      "elevationM": -105,
+      "location": { "lat": -49.57, "lon": -68.35 }
+    },
+    "extremities": {
+      "northmost": { "name": "Punta Gallinas (Colombia)", "location": { "lat": 12.45, "lon": -71.67 } },
+      "southmost": { "name": "Cape Froward (Chile)", "location": { "lat": -53.99, "lon": -71.31 } },
+      "eastmost": { "name": "Ponta do Seixas (Brazil)", "location": { "lat": -7.16, "lon": -34.79 } },
+      "westmost": { "name": "Cabo Pariñas (Peru)", "location": { "lat": -4.67, "lon": -81.33 } }
+    },
+    "subregions": [
+      { "name": "Andean States", "countriesCount": 6 },
+      { "name": "Southern Cone", "countriesCount": 5 },
+      { "name": "Guianas", "countriesCount": 3 },
+      { "name": "Brazil", "countriesCount": 1 }
+    ],
+    "majorOceans": ["Atlantic Ocean", "Pacific Ocean"],
+    "majorLanguages": ["Spanish", "Portuguese", "Quechua", "Aymara", "Guarani"],
+    "notes": "Coast length approximate; subregions are pragmatic groupings, not strict UN M49."
+  }
+]
+

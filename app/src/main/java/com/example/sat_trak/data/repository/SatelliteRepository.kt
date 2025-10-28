@@ -23,7 +23,9 @@ class SatelliteRepository {
     private val satellites = listOf(
         SatelliteInfo(25544, "ISS", "Space Station", "International Space Station - A habitable artificial satellite in low Earth orbit, serving as a microgravity laboratory"),
         SatelliteInfo(33591, "NOAA 19", "Weather Satellite", "NOAA-19 - Polar-orbiting environmental satellite monitoring Earth's weather, atmosphere, and environment"),
-        SatelliteInfo(36585, "GPS BIIF-1", "GPS Navigation", "GPS BIIF-1 (Navstar) - Part of the Global Positioning System constellation providing navigation and timing services")
+        SatelliteInfo(36585, "GPS BIIF-1", "GPS Navigation", "GPS BIIF-1 (Navstar) - Part of the Global Positioning System constellation providing navigation and timing services"),
+        SatelliteInfo(43013, "STARLINK-1007", "Communication", "Starlink-1007 - SpaceX broadband satellite providing global internet connectivity"),
+        SatelliteInfo(37820, "HUBBLE", "Space Telescope", "Hubble Space Telescope - NASA's premier space-based observatory for astronomical research and deep space imaging")
     )
 
     private val moshi = Moshi.Builder()

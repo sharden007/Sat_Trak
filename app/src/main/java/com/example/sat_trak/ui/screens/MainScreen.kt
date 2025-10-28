@@ -1,5 +1,6 @@
 package com.example.sat_trak.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,6 +11,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -18,6 +25,7 @@ import com.example.sat_trak.ui.components.GlobeWebView
 import com.example.sat_trak.ui.viewmodel.SatelliteViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,11 +35,29 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     val errorMessage = viewModel.errorMessage.value
 
     var selectedSatellite by remember { mutableStateOf<SatelliteData?>(null) }
+    var userSelectedSatellite by remember { mutableStateOf(false) } // Track if user manually clicked
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
     var showApiDataDialog by remember { mutableStateOf(false) }
     var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
     var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    // New UI state: trails on/off (trail length is now fixed at 130)
+    var showTrails by remember { mutableStateOf(true) }
+
+    // Auto-cycle through satellites for telemetry display (5 seconds each)
+    LaunchedEffect(satellites, userSelectedSatellite) {
+        if (satellites.isNotEmpty() && !userSelectedSatellite) {
+            var currentIndex = 0
+            while (true) {
+                if (!userSelectedSatellite) {
+                    selectedSatellite = satellites[currentIndex % satellites.size]
+                    currentIndex++
+                }
+                kotlinx.coroutines.delay(5000L) // 5 seconds
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 3D Globe WebView
@@ -40,12 +66,16 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize(),
             onSatelliteClick = { satellite ->
                 selectedSatellite = satellite
+                userSelectedSatellite = true // User manually selected
                 showBottomSheet = true
             },
             onZoomControlsReady = { zoomIn, zoomOut ->
                 onZoomIn = zoomIn
                 onZoomOut = zoomOut
-            }
+            },
+            // use named arguments for trailing parameters to avoid positional-after-named error
+            showTrails = showTrails,
+            selectedSatelliteId = selectedSatellite?.id
         )
 
         // Loading Indicator
@@ -120,6 +150,68 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             }
         }
 
+        // Telemetry HUD (top-left) - show which satellite this telemetry refers to
+        val telemetrySatellite = selectedSatellite ?: satellites.firstOrNull()
+        val telemetry = remember(telemetrySatellite) {
+            telemetrySatellite?.let { s ->
+                val orbitalSpeed = when (s.id) {
+                    25544 -> 7.66
+                    33591 -> 7.40
+                    else -> 3.87
+                }
+                val heading = estimateHeading(s)
+                Triple(orbitalSpeed, heading, s.altitude)
+            } ?: Triple(0.0, 0.0, 0.0)
+        }
+
+        Card(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 100.dp, start = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Show satellite name in the header
+                if (telemetrySatellite != null) {
+                    Text(
+                        text = "📊 Telemetry",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${telemetrySatellite.name}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "NORAD ${telemetrySatellite.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "📊 Telemetry",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "No satellite selected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // use explicit locale-aware formatting
+                Text("Speed: ${String.format(Locale.getDefault(), "%.2f", telemetry.first)} km/s", style = MaterialTheme.typography.bodySmall)
+                Text("Heading: ${String.format(Locale.getDefault(), "%.1f", telemetry.second)}°", style = MaterialTheme.typography.bodySmall)
+                Text("Elevation: ${String.format(Locale.getDefault(), "%.2f", telemetry.third)} km", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         // API Data Viewer Button
         FloatingActionButton(
             onClick = { showApiDataDialog = true },
@@ -170,38 +262,56 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                 )
             }
         }
-    }
 
-    // API Data Dialog
-    if (showApiDataDialog) {
-        AlertDialog(
-            onDismissRequest = { showApiDataDialog = false },
-            title = {
-                Text(
-                    text = "📡 Live API Data",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                ApiDataContent(satellites = satellites, isLoading = isLoading)
-            },
-            confirmButton = {
-                TextButton(onClick = { showApiDataDialog = false }) {
-                    Text("Close")
-                }
-            },
-            modifier = Modifier.fillMaxWidth(0.95f)
-        )
-    }
-
-    // Bottom Sheet for Satellite Details
-    if (showBottomSheet && selectedSatellite != null) {
-        ModalBottomSheet(
-            onDismissRequest = { showBottomSheet = false },
-            sheetState = sheetState
+        // Controls for trails (moved from top-center to bottom-center above rotation)
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            SatelliteDetailSheet(satellite = selectedSatellite!!)
+            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Orbital Trails", style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Switch(checked = showTrails, onCheckedChange = { showTrails = it })
+                }
+            }
+        }
+
+        // Removed the MiniMap box to declutter the display (per user request)
+
+        // API Data Dialog
+        if (showApiDataDialog) {
+            AlertDialog(
+                onDismissRequest = { showApiDataDialog = false },
+                title = {
+                    Text(
+                        text = "📡 Live Satellite Data",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    ApiDataContent(satellites = satellites, isLoading = isLoading)
+                },
+                confirmButton = {
+                    TextButton(onClick = { showApiDataDialog = false }) {
+                        Text("Close")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(0.95f)
+            )
+        }
+
+        // Bottom Sheet for Satellite Details
+        if (showBottomSheet && selectedSatellite != null) {
+            ModalBottomSheet(
+                onDismissRequest = { showBottomSheet = false },
+                sheetState = sheetState
+            ) {
+                SatelliteDetailSheet(satellite = selectedSatellite!!)
+            }
         }
     }
 }
@@ -279,12 +389,12 @@ fun ApiDataContent(satellites: List<SatelliteData>, isLoading: Boolean) {
 
                         ApiDataRow("NORAD ID", satellite.id.toString())
                         ApiDataRow("Type", satellite.type)
-                        ApiDataRow("Latitude", "${String.format("%.6f", satellite.latitude)}°")
-                        ApiDataRow("Longitude", "${String.format("%.6f", satellite.longitude)}°")
-                        ApiDataRow("Altitude", "${String.format("%.2f", satellite.altitude)} km")
-                        ApiDataRow("Position X", "${String.format("%.2f", satellite.x)} km")
-                        ApiDataRow("Position Y", "${String.format("%.2f", satellite.y)} km")
-                        ApiDataRow("Position Z", "${String.format("%.2f", satellite.z)} km")
+                        ApiDataRow("Latitude", String.format(Locale.getDefault(), "%.6f°", satellite.latitude))
+                        ApiDataRow("Longitude", String.format(Locale.getDefault(), "%.6f°", satellite.longitude))
+                        ApiDataRow("Altitude", String.format(Locale.getDefault(), "%.2f km", satellite.altitude))
+                        ApiDataRow("Position X", String.format(Locale.getDefault(), "%.2f km", satellite.x))
+                        ApiDataRow("Position Y", String.format(Locale.getDefault(), "%.2f km", satellite.y))
+                        ApiDataRow("Position Z", String.format(Locale.getDefault(), "%.2f km", satellite.z))
                     }
                 }
             }
@@ -381,9 +491,9 @@ fun SatelliteDetailSheet(satellite: SatelliteData) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        DetailRow("📍 Latitude", "${String.format("%.4f", satellite.latitude)}°")
-        DetailRow("📍 Longitude", "${String.format("%.4f", satellite.longitude)}°")
-        DetailRow("📏 Altitude", "${String.format("%.2f", satellite.altitude)} km")
+        DetailRow("📍 Latitude", String.format(Locale.getDefault(), "%.4f°", satellite.latitude))
+        DetailRow("📍 Longitude", String.format(Locale.getDefault(), "%.4f°", satellite.longitude))
+        DetailRow("📏 Altitude", String.format(Locale.getDefault(), "%.2f km", satellite.altitude))
         DetailRow("🆔 NORAD ID", satellite.id.toString())
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -405,9 +515,9 @@ fun SatelliteDetailSheet(satellite: SatelliteData) {
             else -> 3.87   // GPS satellite approximate speed
         }
 
-        DetailRow("🔄 Orbital Radius", "${String.format("%.2f", orbitalRadius)} km")
-        DetailRow("⚡ Orbital Speed", "~${String.format("%.2f", orbitalSpeed)} km/s")
-        DetailRow("🕐 Est. Orbit Time", "${String.format("%.1f", orbitalCircumference / orbitalSpeed / 60)} min")
+        DetailRow("🔄 Orbital Radius", String.format(Locale.getDefault(), "%.2f km", orbitalRadius))
+        DetailRow("⚡ Orbital Speed", String.format(Locale.getDefault(), "~%.2f km/s", orbitalSpeed))
+        DetailRow("🕐 Est. Orbit Time", String.format(Locale.getDefault(), "%.1f min", orbitalCircumference / orbitalSpeed / 60))
 
         Spacer(modifier = Modifier.height(32.dp))
     }
@@ -434,4 +544,127 @@ fun DetailRow(label: String, value: String) {
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+}
+
+/* -------------------------
+   MiniMap and helpers
+   ------------------------- */
+
+@Suppress("unused")
+@Composable
+fun MiniMap(
+    satellites: List<SatelliteData>,
+    selected: SatelliteData?,
+    showTrails: Boolean,
+    trailSteps: Int
+) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+
+        // Simple background gradient for sea/land impression
+        drawRect(
+            brush = Brush.verticalGradient(listOf(Color(0xFF0B3D91), Color(0xFF113A6C))),
+            size = size
+        )
+
+        // Draw equator and meridian for context
+        val centerX = w / 2f
+        val centerY = h / 2f
+        drawIntoCanvas { canvas ->
+            canvas.drawLine(Offset(0f, centerY), Offset(w, centerY), androidx.compose.ui.graphics.Paint().apply {
+                color = Color.White.copy(alpha = 0.08f)
+                this.strokeWidth = 1f
+            })
+            canvas.drawLine(Offset(centerX, 0f), Offset(centerX, h), androidx.compose.ui.graphics.Paint().apply {
+                color = Color.White.copy(alpha = 0.08f)
+                this.strokeWidth = 1f
+            })
+        }
+
+        satellites.forEach { s ->
+            // Draw trail if requested: generate projected points
+            if (showTrails) {
+                val projected = projectOrbitPoints(s, trailSteps, stepSec = 30.0)
+                val path = Path()
+                projected.forEachIndexed { idx, (lat, lon) ->
+                    val px = ((lon + 180.0) / 360.0 * w).toFloat()
+                    val py = (((90.0 - lat) / 180.0) * h).toFloat()
+                    if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                }
+
+                // fading stroke: draw multiple layered strokes with decreasing alpha
+                val total = projected.size
+                for (i in 0 until total - 1) {
+                    val t = i.toFloat() / max(1f, (total - 1).toFloat())
+                    val alpha = 0.9f * (1f - t)
+                    drawPath(
+                        path = path,
+                        color = Color.Cyan.copy(alpha = alpha),
+                        style = Stroke(width = 1f)
+                    )
+                }
+            }
+
+            // Draw satellite dot
+            val x = ((s.longitude + 180.0) / 360.0 * w).toFloat()
+            val y = (((90.0 - s.latitude) / 180.0) * h).toFloat()
+            drawCircle(
+                color = if (s == selected) Color.Yellow else Color.White,
+                radius = if (s == selected) 4f else 3f,
+                center = Offset(x, y)
+            )
+        }
+    }
+}
+
+/* approximate projection of an orbit by advancing longitude using angular speed.
+   This is a simple circular-orbit approximation for visualization only. */
+fun projectOrbitPoints(s: SatelliteData, steps: Int, stepSec: Double): List<Pair<Double, Double>> {
+    val orbitalRadius = 6371.0 + s.altitude
+    val orbitalSpeed = when (s.id) {
+        25544 -> 7.66
+        33591 -> 7.40
+        else -> 3.87
+    } // km/s
+    val angularSpeedRadPerSec = orbitalSpeed / orbitalRadius // rad/s
+    val deltaAngleRad = angularSpeedRadPerSec * stepSec
+    val deltaLonDeg = Math.toDegrees(deltaAngleRad)
+
+    val points = mutableListOf<Pair<Double, Double>>()
+    var lon = s.longitude
+    val lat = s.latitude // assume roughly constant latitude for short projection
+    repeat(steps) {
+        points.add(Pair(lat, normalizeLongitude(lon)))
+        lon += deltaLonDeg
+    }
+    return points
+}
+
+fun normalizeLongitude(lon: Double): Double {
+    var l = lon % 360.0
+    if (l > 180.0) l -= 360.0
+    if (l < -180.0) l += 360.0
+    return l
+}
+
+/* crude heading estimate: compute bearing between first two projected points */
+fun estimateHeading(s: SatelliteData): Double {
+    val projected = projectOrbitPoints(s, steps = 2, stepSec = 10.0)
+    if (projected.size < 2) return 0.0
+    val (lat1, lon1) = projected[0]
+    val (lat2, lon2) = projected[1]
+    return bearingBetween(lat1, lon1, lat2, lon2)
+}
+
+/* bearing formula (initial bearing) */
+fun bearingBetween(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val phi1 = Math.toRadians(lat1)
+    val phi2 = Math.toRadians(lat2)
+    val deltaLambda = Math.toRadians(lon2 - lon1)
+    val y = sin(deltaLambda) * cos(phi2)
+    val x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(deltaLambda)
+    var theta = Math.toDegrees(atan2(y, x))
+    theta = (theta + 360.0) % 360.0
+    return theta
 }

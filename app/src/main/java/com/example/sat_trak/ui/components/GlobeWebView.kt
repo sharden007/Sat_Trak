@@ -1,6 +1,7 @@
 package com.example.sat_trak.ui.components
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +10,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.sat_trak.data.models.SatelliteData
+import com.example.sat_trak.data.repository.ContinentDataLoader
+import java.lang.StringBuilder
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -16,29 +19,86 @@ fun GlobeWebView(
     satellites: List<SatelliteData>,
     modifier: Modifier = Modifier,
     onSatelliteClick: (SatelliteData) -> Unit = {},
-    onZoomControlsReady: ((zoomIn: () -> Unit, zoomOut: () -> Unit) -> Unit)? = null
+    onZoomControlsReady: ((zoomIn: () -> Unit, zoomOut: () -> Unit) -> Unit)? = null,
+    // visual flags
+    showTrails: Boolean = true,
+    trailSteps: Int = 130,
+    // optional selected satellite id (null = none)
+    selectedSatelliteId: Int? = null
 ) {
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
+            // Load bundled continents.json from assets so the WebView can draw landmasses even when
+            // no external getContinentData() is provided.
+            // Parse assets into a compact JSON containing only bounding boxes to avoid
+            // injected-comments or unexpected schema from the raw file.
+            val continentsForJs = try {
+                // Try to load polygon coordinates from continents_polygons.json first
+                val polygonJson = try {
+                    context.assets.open("continents_polygons.json").bufferedReader().use { it.readText() }
+                } catch (_: Throwable) {
+                    null
+                }
+
+                if (polygonJson != null) {
+                    // We have polygon data - use it directly
+                    polygonJson
+                } else {
+                    // Fallback: load from continents.json and extract bounding boxes
+                    val list = ContinentDataLoader.loadFromAssets(context)
+                    val sb = StringBuilder()
+                    sb.append("[")
+                    list.forEachIndexed { idx, cont ->
+                        val bb = cont.boundingBox
+                        sb.append("{\"id\":\"").append(cont.id).append("\",\"boundingBox\":{\"minLat\":${bb.minLat},\"minLon\":${bb.minLon},\"maxLat\":${bb.maxLat},\"maxLon\":${bb.maxLon}}}")
+                        if (idx < list.size - 1) sb.append(',')
+                    }
+                    sb.append("]")
+                    sb.toString()
+                }
+            } catch (_: Throwable) {
+                "[]"
+            }
+
             WebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.allowContentAccess = true
                 settings.allowFileAccess = true
 
+                // Enable remote debugging to inspect the WebView's JS console (helpful during development)
+                WebView.setWebContentsDebuggingEnabled(true)
+
                 addJavascriptInterface(object {
+                    @Suppress("unused")
                     @JavascriptInterface
                     fun onSatelliteClicked(satelliteId: Int) {
-                        satellites.find { it.id == satelliteId }?.let { satellite ->
-                            onSatelliteClick(satellite)
+                        Log.d("GlobeWebView", "Satellite clicked: ID=$satelliteId")
+                        // Post to main thread to update UI
+                        post {
+                            satellites.find { it.id == satelliteId }?.let { satellite ->
+                                Log.d("GlobeWebView", "Found satellite: ${satellite.name}, triggering callback")
+                                onSatelliteClick(satellite)
+                            } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in list")
                         }
+                    }
+
+                    @Suppress("unused")
+                    @JavascriptInterface
+                    fun onConsole(message: String) {
+                        // forward JS console messages to Android logcat for debugging
+                        Log.d("GlobeWebViewJS", message)
                     }
                 }, "Android")
 
+                // Inject the continents JSON into the HTML template by replacing a marker. This avoids
+                // trying to evaluate JS before the page has the continent data available.
+                val htmlWithContinents = getHtmlContent().replace("/*__CONTINENTS_JSON__*/", continentsForJs)
+
                 loadDataWithBaseURL(
                     null,
-                    getHtmlContent(),
+                    htmlWithContinents,
                     "text/html",
                     "UTF-8",
                     null
@@ -47,13 +107,44 @@ fun GlobeWebView(
         },
         update = { webView ->
             if (satellites.isNotEmpty()) {
-                val satellitesJson = satellites.joinToString(",") {
-                    """{"id":${it.id},"name":"${it.name}","x":${it.x},"y":${it.y},"z":${it.z},"lat":${it.latitude},"lon":${it.longitude},"alt":${it.altitude},"type":"${it.type}"}"""
+                // Also log to the WebView console (forwarded to Android) the count being pushed
+                try {
+                    val count = satellites.size
+                    webView.evaluateJavascript("console.log('Kotlin->JS satellite push count: $count');", null)
+                } catch (_: Throwable) { }
+
+                // Build a safe JSON representation of the satellites list by escaping string fields
+                val satellitesJson = satellites.joinToString(",") { sat ->
+                    val nameEsc = sat.name.replace("\"", "\\\"")
+                    val typeEsc = sat.type.replace("\"", "\\\"")
+                    "{\"id\":${sat.id},\"name\":\"$nameEsc\",\"x\":${sat.x},\"y\":${sat.y},\"z\":${sat.z},\"lat\":${sat.latitude},\"lon\":${sat.longitude},\"alt\":${sat.altitude},\"type\":\"$typeEsc\"}"
                 }
-                webView.evaluateJavascript(
-                    "updateSatellites([$satellitesJson]);",
-                    null
-                )
+
+                // Queue updates if the page hasn't defined updateSatellites yet. This prevents the
+                // JS from ignoring the first push if the page is still loading.
+                val js = "window.__pendingSatellites = [${satellitesJson}]; if(typeof updateSatellites === 'function'){ try{ updateSatellites(window.__pendingSatellites); delete window.__pendingSatellites; }catch(e){ console.log('sat update error:'+e); } }"
+                webView.evaluateJavascript(js, null)
+            }
+
+            // Inject config (removed useHighResTiles)
+            try {
+                val jsConfig = "window.__satTrakConfig = { showTrails: ${showTrails}, trailSteps: ${trailSteps} };"
+                webView.evaluateJavascript(jsConfig, null)
+                webView.evaluateJavascript("if(typeof applyConfig === 'function'){ applyConfig(); }", null)
+            } catch (_: Throwable) {
+                // swallow
+            }
+
+            // highlight selected satellite (or clear if null)
+            try {
+                if (selectedSatelliteId != null) {
+                    Log.d("GlobeWebView", "Highlighting satellite ID: $selectedSatelliteId")
+                    webView.evaluateJavascript("if(typeof highlightSatellite === 'function'){ highlightSatellite(${selectedSatelliteId}); }", null)
+                } else {
+                    webView.evaluateJavascript("if(typeof clearHighlight === 'function'){ clearHighlight(); }", null)
+                }
+            } catch (_: Throwable) {
+                // ignore
             }
 
             // Set up zoom controls
@@ -77,741 +168,379 @@ private fun getHtmlContent(): String {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: linear-gradient(to bottom, #000000 0%, #0a0a2e 50%, #000000 100%);
-            touch-action: none;
-            font-family: Arial, sans-serif;
-        }
-        canvas { 
-            display: block; 
-            width: 100%;
-            height: 100%;
-        }
-        #info {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            color: #ffffff;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            max-width: 250px;
-            pointer-events: none;
-            display: none;
-        }
-        #instructions {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: #ffffff;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 8px 12px;
-            border-radius: 5px;
-            font-size: 11px;
-        }
-        #rotationToggle {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.95);
-            color: #ffffff;
-            border: 3px solid #4CAF50;
-            padding: 15px 25px;
-            border-radius: 10px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-weight: bold;
-            z-index: 10000;
-            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6);
-            white-space: nowrap;
-        }
-        #rotationToggle:hover {
-            background: rgba(76, 175, 80, 0.6);
-            border-color: #66BB6A;
-            transform: translateX(-50%) translateY(-3px);
-            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.8);
-        }
-        #rotationToggle:active {
-            transform: translateX(-50%) scale(0.95);
-        }
+        body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #info { position: absolute; top: 10px; right: 10px; color: #fff; background: rgba(0,0,0,0.7); padding:10px; border-radius:5px; font-size:12px; max-width:250px; pointer-events:none; display:none }
+        #rotationToggle { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.95); color:#fff; border:3px solid #4CAF50; padding:15px 25px; border-radius:10px; font-size:16px; cursor:pointer; z-index:10000 }
     </style>
 </head>
 <body>
-    <div id="info"></div>
-    <button id="rotationToggle">🌍 Rotation: Simulated Speed</button>
-    <div id="instructions">🖱️ Drag to rotate • Scroll to zoom • Click satellites for info</div>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script>
-        let scene, camera, renderer, earth, earthGroup;
-        let satelliteObjects = [];
-        let satelliteLabels = [];
-        let continentLabels = [];
-        let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let rotation = { x: 0.4, y: 0 };
-        let raycaster = new THREE.Raycaster();
-        let mouse = new THREE.Vector2();
-        let currentSatellites = [];
-        let useRealisticRotation = false; // Toggle for rotation mode
-        let visualRotationSpeed = 0.0005; // Visual rotation speed
+<div id="info"></div>
+<button id="rotationToggle">🌍 Simulated Speed</button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    // forward console messages to Android for debugging (Android.onConsole will receive strings)
+    (function(){
+        try {
+            var origLog = console.log || function(){};
+            console.log = function(){
+                try{ Android.onConsole(Array.prototype.slice.call(arguments).join(' ')); }catch(e){}
+                origLog.apply(console, arguments);
+            };
+            var origError = console.error || function(){};
+            console.error = function(){
+                try{ Android.onConsole(Array.prototype.slice.call(arguments).join(' ')); }catch(e){}
+                origError.apply(console, arguments);
+            };
+        } catch(e) {}
+    })();
 
-        function init() {
-            scene = new THREE.Scene();
-            
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.z = 18000;
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000000, 1);
-            document.body.appendChild(renderer.domElement);
-
-            earthGroup = new THREE.Group();
-            scene.add(earthGroup);
-
-            // Create Earth sphere with deep blue oceans
-            const geometry = new THREE.SphereGeometry(6371, 256, 256);
-            
-            // Create a canvas texture for the Earth with landmasses
-            const canvas = document.createElement('canvas');
-            canvas.width = 2048;
-            canvas.height = 1024;
-            const ctx = canvas.getContext('2d');
-            
-            // Fill with ocean blue
-            ctx.fillStyle = '#1a4d8f';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw landmasses in tan/beige
-            ctx.fillStyle = '#d4a673';
-            ctx.strokeStyle = '#8b6914';
-            ctx.lineWidth = 2;
-            
-            const continents = getContinentData();
-            continents.forEach(continent => {
-                ctx.beginPath();
-                continent.coordinates.forEach((coord, i) => {
-                    // Convert lat/lon to canvas coordinates
-                    const x = ((coord[1] + 180) / 360) * canvas.width;
-                    const y = ((90 - coord[0]) / 180) * canvas.height;
-                    if (i === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                });
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-            });
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            
-            const material = new THREE.MeshPhongMaterial({
-                map: texture,
-                specular: 0x3366aa,
-                shininess: 30,
-                emissive: 0x0a2a5a,
-                emissiveIntensity: 0.2
-            });
-            
-            earth = new THREE.Mesh(geometry, material);
-            earthGroup.add(earth);
-            
-            // Add continent labels
-            addContinentLabels();
-            
-            // Add ocean labels
-            addOceanLabels();
-
-            // Lighting for depth and realism
-            const ambientLight = new THREE.AmbientLight(0x404040, 2.5);
-            scene.add(ambientLight);
-
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.8);
-            directionalLight.position.set(10000, 5000, 5000);
-            scene.add(directionalLight);
-
-            const backLight = new THREE.DirectionalLight(0x6688ff, 0.6);
-            backLight.position.set(-10000, -5000, -5000);
-            scene.add(backLight);
-
-            addStars();
-
-            // Event listeners
-            renderer.domElement.addEventListener('mousedown', onMouseDown);
-            renderer.domElement.addEventListener('mousemove', onMouseMove);
-            renderer.domElement.addEventListener('mouseup', onMouseUp);
-            renderer.domElement.addEventListener('wheel', onWheel);
-            renderer.domElement.addEventListener('click', onClick);
-            renderer.domElement.addEventListener('touchstart', onTouchStart);
-            renderer.domElement.addEventListener('touchmove', onTouchMove);
-            renderer.domElement.addEventListener('touchend', onTouchEnd);
-            window.addEventListener('resize', onWindowResize);
-
-            // Rotation mode toggle
-            document.getElementById('rotationToggle').addEventListener('click', () => {
-                useRealisticRotation = !useRealisticRotation;
-                updateRotationMode();
-            });
-
-            animate();
-        }
-
-        function updateRotationMode() {
-            const button = document.getElementById('rotationToggle');
-            if (useRealisticRotation) {
-                button.innerHTML = '🌍 Rotation: Realistic';
-                button.style.background = 'rgba(76, 175, 80, 0.8)';
-            } else {
-                button.innerHTML = '🌍 Rotation: Simulated';
-                button.style.background = 'rgba(0, 0, 0, 0.8)';
-            }
-        }
-
-        function addLandmasses() {
-            const continents = getContinentData();
-            
-            continents.forEach(continent => {
-                // Create 3D filled mesh on sphere surface
-                createLandmassOnSphere(continent.coordinates);
-            });
-        }
-
-        function createLandmassOnSphere(coordinates) {
-            // Simple approach: Create individual triangles using earcut algorithm approximation
-            // For now, use a simpler filled polygon approach
-            
-            const points = coordinates.map(coord => {
-                return latLonToVector3(coord[0], coord[1], 6371 + 50);
-            });
-            
-            // Use ShapeGeometry approach - create shape on plane then map to sphere
-            const shape = new THREE.Shape();
-            
-            // Convert 3D points to 2D for shape (using lat/lon directly)
-            coordinates.forEach((coord, i) => {
-                const lat = coord[0];
-                const lon = coord[1];
-                if (i === 0) {
-                    shape.moveTo(lon, lat);
-                } else {
-                    shape.lineTo(lon, lat);
-                }
-            });
-            shape.closePath();
-            
-            const shapeGeometry = new THREE.ShapeGeometry(shape);
-            const positions = shapeGeometry.attributes.position;
-            
-            // Map the 2D shape vertices to 3D sphere surface
-            for (let i = 0; i < positions.count; i++) {
-                const lon = positions.getX(i);
-                const lat = positions.getY(i);
-                const pos = latLonToVector3(lat, lon, 6371 + 50);
-                positions.setXYZ(i, pos.x, pos.y, pos.z);
-            }
-            
-            positions.needsUpdate = true;
-            shapeGeometry.computeVertexNormals();
-            
-            // Bright, highly visible material
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xe6d7b8,  // Light sandy beige
-                side: THREE.DoubleSide,
-                transparent: false
-            });
-            
-            const mesh = new THREE.Mesh(shapeGeometry, material);
-            earthGroup.add(mesh);
-            
-            // Add outline with higher altitude
-            const outlinePoints = coordinates.map(coord => 
-                latLonToVector3(coord[0], coord[1], 6371 + 55)
-            );
-            outlinePoints.push(outlinePoints[0].clone());
-            
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(outlinePoints);
-            const lineMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x8b7355,  // Brown outline
-                linewidth: 3
-            });
-            const line = new THREE.Line(lineGeometry, lineMaterial);
-            earthGroup.add(line);
-        }
-
+    // SAFETY: provide a fallback getContinentData() if one isn't available globally.
+    // If your app intends to show real continent polygons, replace this stub with the real data provider.
+    if (typeof getContinentData !== 'function') {
         function getContinentData() {
-            // More detailed and accurate continent outlines
-            return [
-                {
-                    name: 'North America',
-                    coordinates: [
-                        [71.5, -156], [70, -141], [69, -135], [68, -133], [66, -139], [64, -141],
-                        [60, -139], [58, -137], [56, -133], [54, -130], [52, -128], [49, -123],
-                        [48.5, -125], [49, -127], [50, -128], [51, -128], [52, -131], [54, -133],
-                        [58, -135], [60, -138], [61, -142], [62, -145], [64, -147], [65, -151],
-                        [66, -156], [67, -161], [68, -165], [69, -168], [70, -172], [71, -177],
-                        [70.5, 178], [69, 175], [66, 172], [63, 169], [60, 167], [58, 170],
-                        [56, 172], [54, 169], [52, 166], [51, 162], [52, 158], [54, 154],
-                        [57, 161], [60, 165], [62, 168], [63, 172], [64, 175], [65, 177],
-                        [60, 170], [58, 165], [55, 160], [53, 156], [51, 152], [52, 148],
-                        [54, 145], [56, 142], [58, 140], [60, 138], [62, 136], [64, 134],
-                        [66, 132], [68, 135], [69, 140], [70, 145], [71, 150], [71.5, 154],
-                        [71, 158], [70, 162], [69, 165], [68, 167], [67, 163], [66, 159],
-                        [65, 155], [64, 151], [62, 147], [60, 144], [58, 141], [57, 138],
-                        [60, -65], [58, -64], [56, -63], [54, -62], [52, -61], [50, -60],
-                        [48, -58], [47.5, -52], [49, -50], [51, -52], [53, -55], [55, -58],
-                        [57, -61], [59, -63], [61, -64], [63, -65], [65, -67], [67, -70],
-                        [69, -73], [70, -77], [71, -82], [72, -87], [73, -92], [74, -97],
-                        [75, -102], [76, -107], [77, -112], [78, -118], [79, -124], [79.5, -130],
-                        [79, -136], [78, -142], [77, -148], [75, -153], [73, -158], [71.5, -156]
-                    ]
-                },
-                {
-                    name: 'South America',
-                    coordinates: [
-                        [12, -72], [11, -71], [10, -70], [8, -69], [6, -68], [4, -67],
-                        [2, -66], [0, -65], [-2, -64], [-4, -63], [-6, -62], [-8, -61],
-                        [-10, -60], [-12, -59], [-14, -58], [-16, -57.5], [-18, -57],
-                        [-20, -58], [-22, -59], [-24, -60], [-26, -62], [-28, -64],
-                        [-30, -66], [-32, -68], [-34, -69.5], [-36, -71], [-38, -72],
-                        [-40, -73], [-42, -73.5], [-44, -74], [-46, -74.5], [-48, -75],
-                        [-50, -75], [-52, -74.5], [-54, -74], [-55, -73], [-55.5, -72],
-                        [-55, -71], [-54, -70], [-53, -69], [-52, -68.5], [-50, -68],
-                        [-48, -67.5], [-46, -67], [-44, -66.5], [-42, -66], [-40, -65.5],
-                        [-38, -65], [-36, -64.5], [-34, -64], [-32, -63.5], [-30, -63],
-                        [-28, -62], [-26, -61], [-24, -60], [-22, -59], [-20, -58],
-                        [-18, -57], [-16, -56.5], [-14, -56], [-12, -55.5], [-10, -55],
-                        [-8, -55], [-6, -55.5], [-4, -56], [-2, -57], [0, -58],
-                        [2, -60], [4, -62], [6, -64], [7, -66], [8, -68], [9, -70],
-                        [10, -71], [11, -71.5], [12, -72]
-                    ]
-                },
-                {
-                    name: 'Africa',
-                    coordinates: [
-                        [37, 10], [36, 12], [34, 15], [32, 18], [30, 20], [28, 22],
-                        [26, 25], [24, 28], [22, 30], [20, 32], [18, 34], [16, 36],
-                        [14, 37], [12, 38], [10, 40], [8, 42], [6, 44], [4, 46],
-                        [2, 48], [0, 50], [-2, 51], [-4, 51], [-6, 51], [-8, 51],
-                        [-10, 50], [-12, 49], [-14, 48], [-16, 48], [-18, 48.5], [-20, 49],
-                        [-22, 49.5], [-24, 50], [-26, 50], [-28, 49], [-30, 48], [-32, 46],
-                        [-34, 44], [-35, 40], [-35, 36], [-34.5, 32], [-34, 28], [-33, 24],
-                        [-32, 20], [-30, 18], [-28, 16], [-26, 15], [-24, 14], [-22, 14],
-                        [-20, 14], [-18, 13.5], [-16, 13], [-14, 13], [-12, 13], [-10, 13],
-                        [-8, 13.5], [-6, 14], [-4, 14.5], [-2, 15], [0, 15], [2, 15],
-                        [4, 15.5], [6, 16], [8, 17], [10, 18], [12, 19], [14, 20],
-                        [16, 22], [18, 24], [20, 26], [22, 28], [24, 30], [26, 32],
-                        [28, 34], [30, 35], [32, 36], [33, 34], [34, 32], [35, 28],
-                        [36, 24], [37, 20], [37.5, 16], [37, 12], [37, 10]
-                    ]
-                },
-                {
-                    name: 'Europe',
-                    coordinates: [
-                        [71, 25], [70, 28], [69, 30], [68, 33], [67, 36], [66, 40],
-                        [65, 44], [64, 48], [63, 52], [62, 56], [60, 60], [58, 62],
-                        [56, 64], [54, 65], [52, 66], [50, 65], [48, 64], [47, 62],
-                        [46, 60], [45, 58], [44, 56], [43, 54], [42, 52], [41, 50],
-                        [40, 48], [39, 46], [38, 44], [37, 42], [36.5, 40], [36, 38],
-                        [36, 36], [36.5, 34], [37, 32], [37.5, 30], [38, 28], [38.5, 26],
-                        [39, 24], [39.5, 22], [40, 20], [40, 18], [40, 16], [40, 14],
-                        [40.5, 12], [41, 10], [41.5, 8], [42, 6], [42.5, 4], [43, 2],
-                        [43.5, 0], [44, -2], [44.5, -4], [45, -6], [45.5, -8], [46, -9],
-                        [47, -8], [48, -6], [49, -4], [50, -2], [51, 0], [52, 2],
-                        [53, 4], [54, 6], [55, 8], [56, 10], [57, 12], [58, 14],
-                        [59, 16], [60, 18], [62, 20], [64, 22], [66, 23], [68, 24],
-                        [70, 24.5], [71, 25]
-                    ]
-                },
-                {
-                    name: 'Asia',
-                    coordinates: [
-                        [77, 70], [76, 75], [75, 80], [74, 85], [73, 90], [72, 95],
-                        [71, 100], [70, 105], [69, 110], [68, 115], [67, 120], [66, 125],
-                        [65, 130], [64, 135], [63, 140], [62, 145], [61, 150], [60, 155],
-                        [58, 160], [56, 165], [54, 169], [52, 171], [50, 172], [48, 170],
-                        [46, 168], [44, 166], [42, 164], [40, 162], [38, 160], [36, 158],
-                        [34, 156], [32, 154], [30, 152], [28, 150], [26, 148], [24, 146],
-                        [22, 144], [20, 142], [18, 140], [16, 138], [14, 136], [12, 134],
-                        [10, 132], [8, 130], [6, 128], [4, 126], [2, 124], [0, 122],
-                        [-2, 120], [-4, 118], [-6, 116], [-8, 114], [-10, 112], [-11, 110],
-                        [-10, 108], [-8, 106], [-6, 104], [-4, 102], [-2, 100], [0, 98],
-                        [2, 96], [4, 94], [6, 92], [8, 90], [10, 88], [12, 86],
-                        [14, 84], [16, 82], [18, 80], [20, 78], [22, 76], [24, 74],
-                        [26, 73], [28, 72], [30, 71], [32, 70.5], [34, 70], [36, 70],
-                        [38, 71], [40, 72], [42, 74], [44, 76], [46, 78], [48, 80],
-                        [50, 82], [52, 84], [54, 86], [56, 88], [58, 90], [60, 92],
-                        [62, 94], [64, 96], [66, 98], [68, 100], [70, 102], [72, 105],
-                        [74, 108], [75, 112], [76, 116], [77, 120], [77.5, 125], [77, 130],
-                        [76, 135], [75, 138], [74, 140], [72, 138], [70, 135], [68, 132],
-                        [66, 128], [65, 124], [64, 120], [63, 116], [62, 112], [61, 108],
-                        [60, 104], [59, 100], [58, 96], [57, 92], [56, 88], [55, 84],
-                        [55, 80], [56, 76], [58, 72], [60, 68], [62, 65], [64, 62],
-                        [66, 60], [68, 58], [70, 57], [72, 58], [74, 60], [75, 64],
-                        [76, 68], [77, 70]
-                    ]
-                },
-                {
-                    name: 'Australia',
-                    coordinates: [
-                        [-10, 142], [-11, 143], [-12, 144], [-13, 145], [-14, 146], [-16, 148],
-                        [-18, 150], [-20, 152], [-22, 153], [-24, 153.5], [-26, 153.5], [-28, 153],
-                        [-30, 152.5], [-32, 152], [-34, 151], [-36, 150], [-38, 148], [-39, 146],
-                        [-38.5, 144], [-38, 142], [-37.5, 140], [-37, 138], [-36, 136], [-35, 134],
-                        [-34, 132], [-33, 130], [-32, 128], [-31, 126], [-30, 125], [-28, 124],
-                        [-26, 123.5], [-24, 123], [-22, 122.5], [-20, 122], [-18, 122], [-16, 122.5],
-                        [-14, 123], [-12, 124], [-11, 126], [-10.5, 128], [-10, 130], [-10, 132],
-                        [-10, 134], [-10, 136], [-10, 138], [-10, 140], [-10, 142]
-                    ]
-                },
-                {
-                    name: 'Antarctica',
-                    coordinates: [
-                        [-60, -60], [-62, -50], [-64, -40], [-66, -30], [-68, -20], [-70, -10],
-                        [-72, 0], [-74, 10], [-76, 20], [-78, 30], [-80, 40], [-82, 50],
-                        [-84, 60], [-85, 70], [-86, 80], [-87, 90], [-87, 100], [-86, 110],
-                        [-85, 120], [-83, 130], [-81, 140], [-79, 150], [-77, 160], [-75, 170],
-                        [-72, 180], [-70, -170], [-68, -160], [-66, -150], [-64, -140], [-62, -130],
-                        [-61, -120], [-60, -110], [-60, -100], [-60, -90], [-60, -80], [-60, -70],
-                        [-60, -60]
-                    ]
-                }
-            ];
+            // return an empty list to avoid runtime errors when drawing continents
+            return [];
         }
+    }
 
-        function latLonToVector3(lat, lon, radius) {
-            const phi = (90 - lat) * (Math.PI / 180);
-            const theta = (lon + 180) * (Math.PI / 180);
-            
-            const x = -(radius * Math.sin(phi) * Math.cos(theta));
-            const y = radius * Math.cos(phi);
-            const z = radius * Math.sin(phi) * Math.sin(theta);
-            
-            return new THREE.Vector3(x, y, z);
+    function getConfig(){ return (window.__satTrakConfig) ? window.__satTrakConfig : { showTrails:true, trailSteps:130, useHighResTiles:false }; }
+
+    // Convert lat/lon (degrees) + radius (km) to THREE.Vector3 in the same coord system used for earth mesh
+    function latLonToVector3(lat, lon, radius){
+        // Match Kotlin latLonAltToCartesian: x = r*cos(lat)*cos(lon); y = r*sin(lat); z = -r*cos(lat)*sin(lon)
+        const latRad = lat * Math.PI / 180.0;
+        const lonRad = lon * Math.PI / 180.0;
+        const x = radius * Math.cos(latRad) * Math.cos(lonRad);
+        const y = radius * Math.sin(latRad);
+        const z = -radius * Math.cos(latRad) * Math.sin(lonRad);
+        return new THREE.Vector3(x, y, z);
+    }
+
+    // Apply configuration changes - NOTE: We're using a photorealistic texture now, not canvas-drawn continents
+    function applyConfig(){
+        // Redraw trails when config changes
+        console.log('applyConfig called - redrawing trails based on config');
+        redrawTrails();
+    }
+
+    // Redraw all trails based on current config
+    function redrawTrails(){
+        // Clear existing trails
+        if(trailsGroup){ 
+            while(trailsGroup.children.length) trailsGroup.remove(trailsGroup.children[0]); 
         }
-
-        function addContinentLabels() {
-            const continents = [
-                { name: 'AFRICA', lat: 0, lon: 20, size: 2000 },
-                { name: 'EUROPE', lat: 54, lon: 20, size: 1600 },
-                { name: 'ASIA', lat: 50, lon: 100, size: 2200 },
-                { name: 'NORTH\\nAMERICA', lat: 54, lon: -100, size: 1800 },
-                { name: 'SOUTH\\nAMERICA', lat: -15, lon: -60, size: 1800 },
-                { name: 'AUSTRALIA', lat: -25, lon: 135, size: 1800 },
-                { name: 'ANTARCTICA', lat: -75, lon: 0, size: 2000 }
-            ];
-
-            continents.forEach(continent => {
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.width = 1024;
-                canvas.height = 256;
-                
-                context.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw text with strong outline
-                context.font = 'Bold 80px Arial';
-                context.textAlign = 'center';
-                context.textBaseline = 'middle';
-                
-                const lines = continent.name.split('\\n');
-                
-                // Black outline for visibility
-                context.strokeStyle = 'rgba(0, 0, 0, 0.95)';
-                context.lineWidth = 10;
-                lines.forEach((line, i) => {
-                    const y = 128 + (i - (lines.length - 1) / 2) * 90;
-                    context.strokeText(line, 512, y);
-                });
-                
-                // White text fill
-                context.fillStyle = 'rgba(255, 255, 255, 1.0)';
-                lines.forEach((line, i) => {
-                    const y = 128 + (i - (lines.length - 1) / 2) * 90;
-                    context.fillText(line, 512, y);
-                });
-
-                const texture = new THREE.Texture(canvas);
-                texture.needsUpdate = true;
-
-                const spriteMaterial = new THREE.SpriteMaterial({ 
-                    map: texture,
-                    transparent: true,
-                    depthTest: false
-                });
-                const sprite = new THREE.Sprite(spriteMaterial);
-                
-                const pos = latLonToVector3(continent.lat, continent.lon, 6371 + 300);
-                sprite.position.copy(pos);
-                sprite.scale.set(continent.size, continent.size * 0.25, 1);
-                
-                earthGroup.add(sprite);
-                continentLabels.push(sprite);
+        
+        // Redraw trails if enabled and we have satellites
+        const cfg = getConfig();
+        if(cfg.showTrails && currentSatellites && currentSatellites.length > 0){
+            currentSatellites.forEach(sat => {
+                drawProjectedTrail(sat, cfg.trailSteps || 130);
             });
+            console.log('Trails redrawn for ' + currentSatellites.length + ' satellites');
+        } else {
+            console.log('Trails cleared (showTrails=' + cfg.showTrails + ')');
         }
+    }
 
-        function addOceanLabels() {
-            const oceans = [
-                { name: 'PACIFIC\\nOCEAN', lat: 0, lon: -160, size: 2400 },
-                { name: 'ATLANTIC\\nOCEAN', lat: 15, lon: -35, size: 2200 },
-                { name: 'INDIAN\\nOCEAN', lat: -20, lon: 75, size: 2200 },
-                { name: 'ARCTIC\\nOCEAN', lat: 80, lon: 0, size: 2000 },
-                { name: 'SOUTHERN\\nOCEAN', lat: -65, lon: 90, size: 2000 }
-            ];
+    // Simple zoom handlers used by the Android UI
+    function zoomIn(){ try{ camera.position.z = Math.max(1000, camera.position.z - 2000); } catch(e){ console.error(e); } }
+    function zoomOut(){ try{ camera.position.z = Math.min(100000, camera.position.z + 2000); } catch(e){ console.error(e); } }
 
-            oceans.forEach(ocean => {
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.width = 1024;
-                canvas.height = 256;
-                
-                context.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw ocean names in blue/cyan
-                context.font = 'Bold 70px Arial';
-                context.textAlign = 'center';
-                context.textBaseline = 'middle';
-                
-                const lines = ocean.name.split('\\n');
-                
-                // Dark outline
-                context.strokeStyle = 'rgba(0, 20, 40, 0.9)';
-                context.lineWidth = 8;
-                lines.forEach((line, i) => {
-                    const y = 128 + (i - (lines.length - 1) / 2) * 85;
-                    context.strokeText(line, 512, y);
-                });
-                
-                // Cyan/light blue fill for ocean names
-                context.fillStyle = 'rgba(100, 200, 255, 0.9)';
-                lines.forEach((line, i) => {
-                    const y = 128 + (i - (lines.length - 1) / 2) * 85;
-                    context.fillText(line, 512, y);
-                });
+    let scene, camera, renderer, earth, earthGroup, trailsGroup;
+    let satelliteObjects = []; let satelliteLabels = []; let currentSatellites = [];
+    let selectedHighlight = null;
+    let highlightedId = null;
+    
+    // Rotation speed control
+    let rotationSpeed = 0.0009; // Simulated speed (default)
+    let isRealTimeSpeed = false; // false = simulated, true = real-time
 
-                const texture = new THREE.Texture(canvas);
-                texture.needsUpdate = true;
-
-                const spriteMaterial = new THREE.SpriteMaterial({ 
-                    map: texture,
-                    transparent: true,
-                    depthTest: false,
-                    opacity: 0.85
-                });
-                const sprite = new THREE.Sprite(spriteMaterial);
-                
-                const pos = latLonToVector3(ocean.lat, ocean.lon, 6371 + 250);
-                sprite.position.copy(pos);
-                sprite.scale.set(ocean.size, ocean.size * 0.25, 1);
-                
-                earthGroup.add(sprite);
-                continentLabels.push(sprite);
-            });
-        }
-
-        function addStars() {
-            const starGeometry = new THREE.BufferGeometry();
-            const starMaterial = new THREE.PointsMaterial({ 
-                color: 0xffffff, 
-                size: 2,
-                transparent: true,
-                opacity: 0.8
-            });
-
-            const starVertices = [];
-            for (let i = 0; i < 1000; i++) {
-                const x = (Math.random() - 0.5) * 40000;
-                const y = (Math.random() - 0.5) * 40000;
-                const z = (Math.random() - 0.5) * 40000;
-                starVertices.push(x, y, z);
-            }
-
-            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-            const stars = new THREE.Points(starGeometry, starMaterial);
-            scene.add(stars);
-        }
-
-        function onMouseDown(e) {
-            isDragging = true;
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        }
-
-        function onMouseMove(e) {
-            if (isDragging) {
-                const deltaX = e.clientX - previousMousePosition.x;
-                const deltaY = e.clientY - previousMousePosition.y;
-                
-                rotation.y += deltaX * 0.005;
-                rotation.x += deltaY * 0.005;
-                
-                rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
-                
-                previousMousePosition = { x: e.clientX, y: e.clientY };
-            }
-        }
-
-        function onMouseUp() {
-            isDragging = false;
-        }
-
-        function onClick(e) {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(satelliteObjects);
-
-            if (intersects.length > 0) {
-                const clickedSat = intersects[0].object;
-                const satData = currentSatellites.find(s => s.id === clickedSat.userData.id);
-                if (satData && typeof Android !== 'undefined') {
-                    Android.onSatelliteClicked(satData.id);
-                    showSatelliteInfo(satData);
+    function init(){
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 50000);
+        camera.position.z = 18000;
+        renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); 
+        renderer.setSize(window.innerWidth, window.innerHeight); 
+        document.body.appendChild(renderer.domElement);
+        earthGroup = new THREE.Group(); 
+        scene.add(earthGroup);
+        trailsGroup = new THREE.Group(); 
+        earthGroup.add(trailsGroup);
+        
+        const geometry = new THREE.SphereGeometry(6371, 256, 256);
+        
+        // Use a high-quality Earth texture instead of canvas-drawn continents
+        const loader = new THREE.TextureLoader();
+        const earthTextureUrl = 'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg';
+        const earthTexture = loader.load(
+            earthTextureUrl,
+            function(texture) {
+                console.log('Earth texture loaded successfully');
+            },
+            undefined,
+            function(error) {
+                console.error('Failed to load Earth texture:', error);
+                // Fallback to another texture source
+                const fallbackUrl = 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg';
+                const fallbackTexture = loader.load(fallbackUrl);
+                if(earth && earth.material) {
+                    earth.material.map = fallbackTexture;
+                    earth.material.needsUpdate = true;
                 }
             }
-        }
-
-        function showSatelliteInfo(sat) {
-            const infoDiv = document.getElementById('info');
-            infoDiv.innerHTML = `
-                <strong>🛰️ ${'$'}{sat.name}</strong><br>
-                <em>${'$'}{sat.type}</em><br>
-                <br>
-                📍 Lat: ${'$'}{sat.lat.toFixed(2)}°<br>
-                📍 Lon: ${'$'}{sat.lon.toFixed(2)}°<br>
-                📏 Alt: ${'$'}{sat.alt.toFixed(0)} km<br>
-                🆔 NORAD: ${'$'}{sat.id}
-            `;
-            infoDiv.style.display = 'block';
-            
-            setTimeout(() => {
-                infoDiv.style.display = 'none';
-            }, 5000);
-        }
-
-        function onTouchStart(e) {
-            if (e.touches.length === 1) {
-                isDragging = true;
-                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            }
-        }
-
-        function onTouchMove(e) {
-            e.preventDefault();
-            if (isDragging && e.touches.length === 1) {
-                const deltaX = e.touches[0].clientX - previousMousePosition.x;
-                const deltaY = e.touches[0].clientY - previousMousePosition.y;
-                
-                rotation.y += deltaX * 0.005;
-                rotation.x += deltaY * 0.005;
-                
-                rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
-                
-                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            }
-        }
-
-        function onTouchEnd() {
-            isDragging = false;
-        }
-
-        function onWheel(e) {
-            e.preventDefault();
-            camera.position.z += e.deltaY * 5;
-            camera.position.z = Math.max(9000, Math.min(30000, camera.position.z));
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function zoomIn() {
-            camera.position.z = Math.max(9000, camera.position.z - 1000);
-        }
-
-        function zoomOut() {
-            camera.position.z = Math.min(30000, camera.position.z + 1000);
-        }
-
-        function updateSatellites(satellites) {
-            currentSatellites = satellites;
-            
-            satelliteObjects.forEach(obj => earthGroup.remove(obj));
-            satelliteLabels.forEach(label => earthGroup.remove(label));
-            satelliteObjects = [];
-            satelliteLabels = [];
-
-            satellites.forEach(sat => {
-                const geometry = new THREE.SphereGeometry(120, 16, 16);
-                const material = new THREE.MeshBasicMaterial({ 
-                    color: sat.id === 25544 ? 0xff0000 : (sat.id === 33591 ? 0x00ff00 : 0xffff00)
-                });
-                const sphere = new THREE.Mesh(geometry, material);
-                sphere.position.set(sat.x, sat.y, sat.z);
-                sphere.userData = { id: sat.id };
-                earthGroup.add(sphere);
-                satelliteObjects.push(sphere);
-
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.width = 256;
-                canvas.height = 64;
-                context.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                context.fillRect(0, 0, canvas.width, canvas.height);
-                context.font = 'Bold 20px Arial';
-                context.fillStyle = 'white';
-                context.textAlign = 'center';
-                context.fillText(sat.name, 128, 40);
-
-                const texture = new THREE.Texture(canvas);
-                texture.needsUpdate = true;
-
-                const spriteMaterial = new THREE.SpriteMaterial({ 
-                    map: texture,
-                    transparent: true
-                });
-                const sprite = new THREE.Sprite(spriteMaterial);
-                sprite.position.set(sat.x, sat.y + 300, sat.z);
-                sprite.scale.set(800, 200, 1);
-                earthGroup.add(sprite);
-                satelliteLabels.push(sprite);
+        );
+        
+        const material = new THREE.MeshPhongMaterial({ 
+            map: earthTexture, 
+            specular: 0x333333, 
+            shininess: 25,
+            emissive: 0x112244,
+            emissiveIntensity: 0.15
+        });
+        
+        earth = new THREE.Mesh(geometry, material); 
+        earthGroup.add(earth);
+        
+        // lights
+        scene.add(new THREE.AmbientLight(0x404040, 2.5)); 
+        const dl = new THREE.DirectionalLight(0xffffff, 1.8); 
+        dl.position.set(10000, 5000, 5000); 
+        scene.add(dl);
+        
+        // events
+        renderer.domElement.addEventListener('click', onClick);
+        window.addEventListener('resize', onWindowResize);
+        
+        // Add rotation toggle button event listener
+        const toggleBtn = document.getElementById('rotationToggle');
+        if(toggleBtn){
+            toggleBtn.addEventListener('click', function(){
+                isRealTimeSpeed = !isRealTimeSpeed;
+                if(isRealTimeSpeed){
+                    // Real-time: Earth rotates 360° in 24 hours = 0.004167°/sec
+                    // At 60fps, that's 0.004167/60 = 0.0000694°/frame
+                    rotationSpeed = 0.0000694 * (Math.PI / 180); // Convert to radians
+                    toggleBtn.textContent = '🌍 Real-Time Speed';
+                    toggleBtn.style.borderColor = '#2196F3';
+                    console.log('Rotation: Real-Time Speed');
+                } else {
+                    // Simulated: faster for better visualization
+                    rotationSpeed = 0.0005;
+                    toggleBtn.textContent = '🌍 Simulated Speed';
+                    toggleBtn.style.borderColor = '#4CAF50';
+                    console.log('Rotation: Simulated Speed');
+                }
             });
         }
+        
+        animate();
+    }
 
-        function animate() {
-            requestAnimationFrame(animate);
+    function highlightSatellite(id){
+        try{
+            // Clear any existing highlight first
+            clearHighlight();
             
-            earthGroup.rotation.x = rotation.x;
+            // set desired highlighted id; create highlight mesh if absent; position will be updated in animate()
+            highlightedId = id;
+            if(!id) return;
             
-            if (useRealisticRotation) {
-                // Realistic rotation: Earth rotates 360° in 24 hours
-                const now = Date.now();
-                const earthRotationRate = (2 * Math.PI) / 86400000; // radians per millisecond
-                const millisecondsInDay = 86400000;
-                const currentTimeInDay = now % millisecondsInDay;
-                const earthAutoRotation = (currentTimeInDay * earthRotationRate);
-                earthGroup.rotation.y = rotation.y + earthAutoRotation;
+            // Create a larger, more visible green wireframe box
+            const boxSize = 500; // Increased from 360 for better visibility
+            const boxGeom = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+            const boxMat = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00, 
+                wireframe: true,
+                wireframeLinewidth: 3 // Thicker lines for better visibility
+            });
+            const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+            boxMesh.userData = { isHighlight: true };
+            earthGroup.add(boxMesh);
+            selectedHighlight = boxMesh;
+            
+            console.log('Highlight box created for satellite ID:', id);
+        } catch(e){ 
+            console.error('Error in highlightSatellite:', e); 
+        }
+    }
+    
+    function clearHighlight(){ 
+        try{ 
+            if(selectedHighlight){ 
+                earthGroup.remove(selectedHighlight); 
+                selectedHighlight.geometry?.dispose(); 
+                selectedHighlight.material?.dispose(); 
+                selectedHighlight = null; 
+                highlightedId = null;
+                console.log('Highlight cleared');
+            } 
+        }catch(e){
+            console.error('Error in clearHighlight:', e);
+        } 
+    }
+
+    function updateSatellites(satellites){
+        try{ console.log('updateSatellites called, count=' + (satellites? satellites.length : 0)); }catch(e){}
+        currentSatellites = satellites;
+        satelliteObjects.forEach(o=>earthGroup.remove(o)); satelliteLabels.forEach(l=>earthGroup.remove(l)); satelliteObjects = []; satelliteLabels = [];
+        if(trailsGroup){ while(trailsGroup.children.length) trailsGroup.remove(trailsGroup.children[0]); }
+        const cfg = getConfig(); satellites.forEach(sat=>{
+            const geometry = new THREE.SphereGeometry(120, 16, 16);
+            const material = new THREE.MeshBasicMaterial({ color: sat.id===25544?0xff0000:(sat.id===33591?0x00ff00:0xffff00) });
+            // compute position: use provided x/y/z when available and non-zero, otherwise compute from lat/lon
+            let posVec;
+            try{
+                if(sat.x != null && sat.y != null && sat.z != null && (sat.x !== 0 || sat.y !== 0 || sat.z !== 0)){
+                    posVec = new THREE.Vector3(sat.x, sat.y, sat.z);
+                } else {
+                    posVec = latLonToVector3(sat.lat, sat.lon, 6371 + (sat.alt || 400));
+                }
+            }catch(e){
+                posVec = latLonToVector3(sat.lat, sat.lon, 6371 + (sat.alt || 400));
+            }
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.copy(posVec);
+            sphere.userData={id:sat.id}; earthGroup.add(sphere); satelliteObjects.push(sphere);
+            // labels skipped for brevity
+            if(cfg.showTrails) drawProjectedTrail(sat, cfg.trailSteps||40);
+        });
+    }
+
+    function drawProjectedTrail(sat, steps){
+        const orbitalRadius = 6371 + (sat.alt||400);
+        let orbitalSpeed = 3.87;
+        if(sat.id===25544) orbitalSpeed = 7.66;
+        else if(sat.id===33591) orbitalSpeed = 7.40;
+        const angularSpeedRadPerSec = orbitalSpeed / orbitalRadius;
+        const stepSec = 30.0;
+        const deltaAngleRad = angularSpeedRadPerSec * stepSec;
+        const deltaLonDeg = (deltaAngleRad * 180) / Math.PI;
+        let lon = sat.lon;
+        const lat = sat.lat;
+        const pts = [];
+        for(let i=0;i<steps;i++){
+            pts.push(latLonToVector3(lat, lon, orbitalRadius));
+            lon += deltaLonDeg;
+        }
+        for(let i=0;i<pts.length-1;i++){
+            const segGeom = new THREE.BufferGeometry().setFromPoints([pts[i], pts[i+1]]);
+            const t = i / Math.max(1, pts.length-1);
+            const opacity = 0.9 * (1 - t);
+            const mat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: opacity });
+            const line = new THREE.Line(segGeom, mat);
+            if(trailsGroup) trailsGroup.add(line);
+        }
+    }
+
+    function onClick(e){
+        console.log('Click detected on canvas');
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const mouse = new THREE.Vector2(x, y);
+        const ray = new THREE.Raycaster();
+        // Increase raycaster threshold to make satellites easier to click
+        ray.params.Points.threshold = 200;
+        ray.setFromCamera(mouse, camera);
+        const intersects = ray.intersectObjects(satelliteObjects, false);
+        console.log('Raycaster check: ' + intersects.length + ' intersections found');
+        if(intersects.length > 0){
+            const clicked = intersects[0].object;
+            console.log('Clicked object userData:', clicked.userData);
+            const sat = currentSatellites.find(s => s.id === clicked.userData.id);
+            if(sat){
+                console.log('Found satellite:', sat.name, 'ID:', sat.id);
+                if(typeof Android !== 'undefined' && Android.onSatelliteClicked){
+                    console.log('Calling Android.onSatelliteClicked');
+                    Android.onSatelliteClicked(sat.id);
+                } else {
+                    console.error('Android interface not available');
+                }
             } else {
-                // Visual rotation: Fast visual speed for better viewing
-                earthGroup.rotation.y += visualRotationSpeed;
-                rotation.y += visualRotationSpeed;
+                console.error('Satellite not found in currentSatellites array');
             }
-            
-            renderer.render(scene, camera);
+        } else {
+            console.log('No satellite clicked - click on empty space');
         }
+    }
 
-        init();
+    function onWindowResize(){
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate(){
+        requestAnimationFrame(animate);
+        earthGroup.rotation.x = 0.4;
+        earthGroup.rotation.y += rotationSpeed;
+        if(selectedHighlight && highlightedId != null){
+            const obj = satelliteObjects.find(o => o.userData && o.userData.id === highlightedId);
+            if(obj){ selectedHighlight.position.copy(obj.position); }
+        }
+        renderer.render(scene, camera);
+    }
+
+    init();
+    try{ console.log('Globe initialized'); }catch(e){}
+    
+    // If Kotlin injected satellite data before the page finished loading, process it now.
+    try{
+        if(window && window.__pendingSatellites){
+            if(typeof updateSatellites === 'function'){
+                try{ updateSatellites(window.__pendingSatellites); delete window.__pendingSatellites; }
+                catch(e){ console.error('processing pending satellites:'+e); }
+            }
+        }
+    }catch(e){ /* ignore */ }
+
+    // Apply any config that Kotlin set before page load
+    try{ if(typeof applyConfig === 'function'){ applyConfig(); } }catch(e){}
+
+    // Debug fallback: if no satellites appear after 2s, create a visible test satellite at lat=0,lon=0
+    try{
+        setTimeout(function(){
+            try{
+                if(typeof updateSatellites === 'function' && (currentSatellites == null || currentSatellites.length===0)){
+                    console.log('No satellites received — drawing debug satellite');
+                    const debug = { id: 99999, name: 'DEBUG', lat:0, lon:0, alt:400, x: null, y: null, z: null };
+                    // compute vector and add sphere directly
+                    const vec = latLonToVector3(debug.lat, debug.lon, 6371 + debug.alt);
+                    const geometry = new THREE.SphereGeometry(240, 16, 16);
+                    const material = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+                    const sphere = new THREE.Mesh(geometry, material);
+                    sphere.position.copy(vec);
+                    sphere.userData = { id: debug.id };
+                    earthGroup.add(sphere);
+                    satelliteObjects.push(sphere);
+                }
+            }catch(e){ console.error('debug fallback error:'+e); }
+        }, 2000);
+    }catch(e){ /* ignore */ }
+</script>
+
+    <script>
+    // continents JSON will be injected into this placeholder by the Kotlin factory using
+    // a simple string replace; we keep it as a JS value so getContinentData() can return it.
+    window.__CONTINENTS_DATA = /*__CONTINENTS_JSON__*/;
+    function getContinentData(){ return (window.__CONTINENTS_DATA) ? window.__CONTINENTS_DATA : []; }
+
+    // After continents are injected, force a redraw and process any pending satellites.
+    try{
+        console.log('continents injected, count=' + ((window.__CONTINENTS_DATA && window.__CONTINENTS_DATA.length) || 0));
+    }catch(e){}
+    try{ if(typeof applyConfig === 'function'){ applyConfig(); console.log('applyConfig called after continents injection'); } }catch(e){ console.error(e); }
+    try{
+        if(window && window.__pendingSatellites){
+            if(typeof updateSatellites === 'function'){
+                try{ updateSatellites(window.__pendingSatellites); console.log('processed pending satellites, count=' + window.__pendingSatellites.length); delete window.__pendingSatellites; }
+                catch(e){ console.error('processing pending satellites:'+e); }
+            }
+        }
+    }catch(e){ console.error(e) }
     </script>
+
 </body>
 </html>
     """.trimIndent()
