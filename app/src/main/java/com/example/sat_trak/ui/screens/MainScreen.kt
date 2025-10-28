@@ -41,13 +41,11 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
     var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    // New UI states: trails, trail length, and high-res/vector tiles toggle
+    // New UI state: trails on/off (trail length is now fixed at 130)
     var showTrails by remember { mutableStateOf(true) }
-    var trailSteps by remember { mutableStateOf(40) }
-    var useHighResTiles by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 3D Globe WebView - pass new params (GlobeWebView implementation can choose to use these)
+        // 3D Globe WebView
         GlobeWebView(
             satellites = satellites,
             modifier = Modifier.fillMaxSize(),
@@ -61,8 +59,6 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             },
             // use named arguments for trailing parameters to avoid positional-after-named error
             showTrails = showTrails,
-            trailSteps = trailSteps,
-            useHighResTiles = useHighResTiles,
             selectedSatelliteId = selectedSatellite?.id
         )
 
@@ -138,6 +134,68 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             }
         }
 
+        // Telemetry HUD (top-left) - show which satellite this telemetry refers to
+        val telemetrySatellite = selectedSatellite ?: satellites.firstOrNull()
+        val telemetry = remember(telemetrySatellite) {
+            telemetrySatellite?.let { s ->
+                val orbitalSpeed = when (s.id) {
+                    25544 -> 7.66
+                    33591 -> 7.40
+                    else -> 3.87
+                }
+                val heading = estimateHeading(s)
+                Triple(orbitalSpeed, heading, s.altitude)
+            } ?: Triple(0.0, 0.0, 0.0)
+        }
+
+        Card(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 100.dp, start = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Show satellite name in the header
+                if (telemetrySatellite != null) {
+                    Text(
+                        text = "📊 Telemetry",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${telemetrySatellite.name}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "NORAD ${telemetrySatellite.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "📊 Telemetry",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "No satellite selected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // use explicit locale-aware formatting
+                Text("Speed: ${String.format(Locale.getDefault(), "%.2f", telemetry.first)} km/s", style = MaterialTheme.typography.bodySmall)
+                Text("Heading: ${String.format(Locale.getDefault(), "%.1f", telemetry.second)}°", style = MaterialTheme.typography.bodySmall)
+                Text("Elevation: ${String.format(Locale.getDefault(), "%.2f", telemetry.third)} km", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         // API Data Viewer Button
         FloatingActionButton(
             onClick = { showApiDataDialog = true },
@@ -189,60 +247,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             }
         }
 
-        // Telemetry HUD (top-left) - show which satellite this telemetry refers to
-        val telemetrySatellite = selectedSatellite ?: satellites.firstOrNull()
-        val telemetry = remember(telemetrySatellite) {
-            telemetrySatellite?.let { s ->
-                val orbitalSpeed = when (s.id) {
-                    25544 -> 7.66
-                    33591 -> 7.40
-                    else -> 3.87
-                }
-                val heading = estimateHeading(s)
-                Triple(orbitalSpeed, heading, s.altitude)
-            } ?: Triple(0.0, 0.0, 0.0)
-        }
-
-        Card(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "Telemetry",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // New: show satellite name and NORAD ID so it's unambiguous
-                if (telemetrySatellite != null) {
-                    Text(
-                        text = "${telemetrySatellite.name} (NORAD ${telemetrySatellite.id})",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                } else {
-                    Text(
-                        text = "No satellite selected",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
-
-                // use explicit locale-aware formatting
-                Text("Speed: ${String.format(Locale.getDefault(), "%.2f", telemetry.first)} km/s", style = MaterialTheme.typography.bodySmall)
-                Text("Heading: ${String.format(Locale.getDefault(), "%.1f", telemetry.second)}°", style = MaterialTheme.typography.bodySmall)
-                Text("Elevation: ${String.format(Locale.getDefault(), "%.2f", telemetry.third)} km", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        // Controls for trails and tiles (moved from top-center to bottom-center above rotation)
+        // Controls for trails (moved from top-center to bottom-center above rotation)
         Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -251,28 +256,9 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
         ) {
             Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Trails", style = MaterialTheme.typography.bodySmall)
+                    Text("Orbital Trails", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.width(8.dp))
                     Switch(checked = showTrails, onCheckedChange = { showTrails = it })
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text("High-res tiles", style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Switch(checked = useHighResTiles, onCheckedChange = { useHighResTiles = it })
-                }
-                if (showTrails) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Trail length", style = MaterialTheme.typography.bodySmall)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Slider(
-                            value = trailSteps.toFloat(),
-                            onValueChange = { trailSteps = it.coerceIn(8f, 180f).roundToInt() },
-                            valueRange = 8f..180f,
-                            modifier = Modifier.width(160.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(trailSteps.toString(), style = MaterialTheme.typography.bodySmall)
-                    }
                 }
             }
         }

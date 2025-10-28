@@ -11,11 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.sat_trak.data.models.SatelliteData
 import com.example.sat_trak.data.repository.ContinentDataLoader
-import com.example.sat_trak.data.models.BoundingBox
-import com.example.sat_trak.data.models.Continent
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import com.squareup.moshi.Types
 import java.lang.StringBuilder
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -27,8 +22,7 @@ fun GlobeWebView(
     onZoomControlsReady: ((zoomIn: () -> Unit, zoomOut: () -> Unit) -> Unit)? = null,
     // visual flags
     showTrails: Boolean = true,
-    trailSteps: Int = 40,
-    useHighResTiles: Boolean = false,
+    trailSteps: Int = 130,
     // optional selected satellite id (null = none)
     selectedSatelliteId: Int? = null
 ) {
@@ -80,9 +74,11 @@ fun GlobeWebView(
                     @Suppress("unused")
                     @JavascriptInterface
                     fun onSatelliteClicked(satelliteId: Int) {
+                        Log.d("GlobeWebView", "Satellite clicked: ID=$satelliteId")
                         satellites.find { it.id == satelliteId }?.let { satellite ->
+                            Log.d("GlobeWebView", "Found satellite: ${satellite.name}, triggering callback")
                             onSatelliteClick(satellite)
-                        }
+                        } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in list")
                     }
 
                     @Suppress("unused")
@@ -127,9 +123,9 @@ fun GlobeWebView(
                 webView.evaluateJavascript(js, null)
             }
 
-            // Inject config
+            // Inject config (removed useHighResTiles)
             try {
-                val jsConfig = "window.__satTrakConfig = { showTrails: ${showTrails}, trailSteps: ${trailSteps}, useHighResTiles: ${useHighResTiles} };"
+                val jsConfig = "window.__satTrakConfig = { showTrails: ${showTrails}, trailSteps: ${trailSteps} };"
                 webView.evaluateJavascript(jsConfig, null)
                 webView.evaluateJavascript("if(typeof applyConfig === 'function'){ applyConfig(); }", null)
             } catch (_: Throwable) {
@@ -139,6 +135,7 @@ fun GlobeWebView(
             // highlight selected satellite (or clear if null)
             try {
                 if (selectedSatelliteId != null) {
+                    Log.d("GlobeWebView", "Highlighting satellite ID: $selectedSatelliteId")
                     webView.evaluateJavascript("if(typeof highlightSatellite === 'function'){ highlightSatellite(${selectedSatelliteId}); }", null)
                 } else {
                     webView.evaluateJavascript("if(typeof clearHighlight === 'function'){ clearHighlight(); }", null)
@@ -176,7 +173,7 @@ private fun getHtmlContent(): String {
 </head>
 <body>
 <div id="info"></div>
-<button id="rotationToggle">🌍 Rotation: Simulated Speed</button>
+<button id="rotationToggle">🌍 Simulated Speed</button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
     // forward console messages to Android for debugging (Android.onConsole will receive strings)
@@ -204,7 +201,7 @@ private fun getHtmlContent(): String {
         }
     }
 
-    function getConfig(){ return (window.__satTrakConfig) ? window.__satTrakConfig : { showTrails:true, trailSteps:40, useHighResTiles:false }; }
+    function getConfig(){ return (window.__satTrakConfig) ? window.__satTrakConfig : { showTrails:true, trailSteps:130, useHighResTiles:false }; }
 
     // Convert lat/lon (degrees) + radius (km) to THREE.Vector3 in the same coord system used for earth mesh
     function latLonToVector3(lat, lon, radius){
@@ -233,7 +230,7 @@ private fun getHtmlContent(): String {
     let highlightedId = null;
     
     // Rotation speed control
-    let rotationSpeed = 0.0005; // Simulated speed (default)
+    let rotationSpeed = 0.0009; // Simulated speed (default)
     let isRealTimeSpeed = false; // false = simulated, true = real-time
 
     function init(){
@@ -301,7 +298,7 @@ private fun getHtmlContent(): String {
                     // Real-time: Earth rotates 360° in 24 hours = 0.004167°/sec
                     // At 60fps, that's 0.004167/60 = 0.0000694°/frame
                     rotationSpeed = 0.0000694 * (Math.PI / 180); // Convert to radians
-                    toggleBtn.textContent = '🌍 Rotation: Real-Time Speed';
+                    toggleBtn.textContent = '🌍 Real-Time Speed';
                     toggleBtn.style.borderColor = '#2196F3';
                     console.log('Rotation: Real-Time Speed');
                 } else {
@@ -319,21 +316,46 @@ private fun getHtmlContent(): String {
 
     function highlightSatellite(id){
         try{
+            // Clear any existing highlight first
+            clearHighlight();
+            
             // set desired highlighted id; create highlight mesh if absent; position will be updated in animate()
             highlightedId = id;
             if(!id) return;
-            if(!selectedHighlight){
-                const boxSize = 360; // ~3x satellite marker diameter for visibility
-                const boxGeom = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
-                const boxMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
-                const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-                boxMesh.userData = { isHighlight: true };
-                earthGroup.add(boxMesh);
-                selectedHighlight = boxMesh;
-            }
-        } catch(e){ console.error(e) }
+            
+            // Create a larger, more visible green wireframe box
+            const boxSize = 500; // Increased from 360 for better visibility
+            const boxGeom = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+            const boxMat = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00, 
+                wireframe: true,
+                wireframeLinewidth: 3 // Thicker lines for better visibility
+            });
+            const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+            boxMesh.userData = { isHighlight: true };
+            earthGroup.add(boxMesh);
+            selectedHighlight = boxMesh;
+            
+            console.log('Highlight box created for satellite ID:', id);
+        } catch(e){ 
+            console.error('Error in highlightSatellite:', e); 
+        }
     }
-    function clearHighlight(){ try{ if(selectedHighlight){ earthGroup.remove(selectedHighlight); selectedHighlight.geometry?.dispose(); selectedHighlight.material?.dispose(); selectedHighlight = null; } }catch(e){console.error(e)} }
+    
+    function clearHighlight(){ 
+        try{ 
+            if(selectedHighlight){ 
+                earthGroup.remove(selectedHighlight); 
+                selectedHighlight.geometry?.dispose(); 
+                selectedHighlight.material?.dispose(); 
+                selectedHighlight = null; 
+                highlightedId = null;
+                console.log('Highlight cleared');
+            } 
+        }catch(e){
+            console.error('Error in clearHighlight:', e);
+        } 
+    }
 
     function updateSatellites(satellites){
         try{ console.log('updateSatellites called, count=' + (satellites? satellites.length : 0)); }catch(e){}
