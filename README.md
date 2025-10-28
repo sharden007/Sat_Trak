@@ -2,6 +2,25 @@
 
 A stunning real-time satellite tracking application featuring an interactive 3D Earth globe powered by Three.js and WebGL. Watch 5 satellites orbit Earth in real-time with beautiful orbital trail visualization.
 
+## 📸 Screenshots
+
+<div align="center">
+  <img src="screenshots/app-overview.png" alt="App Overview" width="800"/>
+  <p><i>Real-time satellite tracking with 3D Earth globe</i></p>
+</div>
+
+<div align="center">
+  <img src="screenshots/app-overview.png" alt="App Overview" width="400"/>
+  <img src="screenshots/data-panel.png" alt="Telemetry Panel" width="400"/>
+  <p><i>Left: Orbital trails visualization | Right: Auto-cycling telemetry display</i></p>
+</div>
+
+<div align="center">
+  <img src="screenshots/satellite-details.png" alt="Satellite Details" width="400"/>
+  <img src="screenshots/api-data.png" alt="API Data" width="400"/>
+  <p><i>Left: Satellite detail sheet | Right: Live API data viewer</i></p>
+</div>
+
 ## ✨ Features
 
 ### Real-Time Tracking
