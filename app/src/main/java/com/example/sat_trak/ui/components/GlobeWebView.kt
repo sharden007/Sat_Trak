@@ -217,54 +217,10 @@ private fun getHtmlContent(): String {
         return new THREE.Vector3(x, y, z);
     }
 
-    // Apply configuration changes (e.g. high-res tiles toggle) by updating the earth texture
+    // Apply configuration changes - NOTE: We're using a photorealistic texture now, not canvas-drawn continents
     function applyConfig(){
-        try{
-            const cfg = getConfig();
-            if(earth && earth.material){
-                const canvas = document.createElement('canvas');
-                canvas.width = cfg.useHighResTiles ? 4096 : 2048;
-                canvas.height = cfg.useHighResTiles ? 2048 : 1024;
-                const ctx = canvas.getContext('2d');
-                // Enable anti-aliasing for smoother edges
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.fillStyle = '#1a4d8f'; ctx.fillRect(0,0,canvas.width, canvas.height);
-                const continents = (typeof getContinentData === 'function') ? getContinentData() : [];
-                ctx.fillStyle = '#d4a673'; 
-                ctx.strokeStyle = '#8b6914'; 
-                ctx.lineWidth = 3; // Thicker borders
-                ctx.lineJoin = 'round'; // Smoother corners
-                ctx.lineCap = 'round'; // Smoother line ends
-                continents.forEach(cont=>{
-                    try{
-                        if(Array.isArray(cont.coordinates) && cont.coordinates.length>0){
-                            console.log('Drawing continent ' + cont.id + ' with ' + cont.coordinates.length + ' points');
-                            ctx.beginPath();
-                            cont.coordinates.forEach((coord,i)=>{ 
-                                // coord is [lon, lat] in GeoJSON format
-                                const lon = coord[0];
-                                const lat = coord[1];
-                                const x = ((lon+180)/360)*canvas.width; 
-                                const y = ((90-lat)/180)*canvas.height; 
-                                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                            });
-                            ctx.closePath(); ctx.fill(); ctx.stroke();
-                        } else if(cont.boundingBox){
-                            // fallback: draw bounding box rectangle when polygon coords are unavailable
-                            const minLat = cont.boundingBox.minLat; const maxLat = cont.boundingBox.maxLat;
-                            const minLon = cont.boundingBox.minLon; const maxLon = cont.boundingBox.maxLon;
-                            const x1 = ((minLon+180)/360)*canvas.width; const y1 = ((90-maxLat)/180)*canvas.height;
-                            const x2 = ((maxLon+180)/360)*canvas.width; const y2 = ((90-minLat)/180)*canvas.height;
-                            ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y1); ctx.lineTo(x2,y2); ctx.lineTo(x1,y2); ctx.closePath(); ctx.fill(); ctx.stroke();
-                        }
-                    }catch(e){ console.error('continent draw error:'+e); }
-                });
-                const tex = new THREE.CanvasTexture(canvas); tex.needsUpdate = true;
-                if(earth.material.map && earth.material.map.dispose) earth.material.map.dispose();
-                earth.material.map = tex; earth.material.needsUpdate = true;
-            }
-        }catch(e){ console.error(e) }
+        // This function is kept for compatibility but does nothing since we use real Earth imagery
+        console.log('applyConfig called - using photorealistic Earth texture');
     }
 
     // Simple zoom handlers used by the Android UI
@@ -284,93 +240,54 @@ private fun getHtmlContent(): String {
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 50000);
         camera.position.z = 18000;
-        renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement);
-        earthGroup = new THREE.Group(); scene.add(earthGroup);
-        trailsGroup = new THREE.Group(); earthGroup.add(trailsGroup);
+        renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); 
+        renderer.setSize(window.innerWidth, window.innerHeight); 
+        document.body.appendChild(renderer.domElement);
+        earthGroup = new THREE.Group(); 
+        scene.add(earthGroup);
+        trailsGroup = new THREE.Group(); 
+        earthGroup.add(trailsGroup);
+        
         const geometry = new THREE.SphereGeometry(6371, 256, 256);
-        // initial canvas texture
-        const cfg = getConfig(); 
-        const canvas = document.createElement('canvas'); 
-        canvas.width = cfg.useHighResTiles ? 4096 : 2048; 
-        canvas.height = cfg.useHighResTiles ? 2048 : 1024; 
-        const ctx = canvas.getContext('2d'); 
-        // Enable anti-aliasing for smoother edges
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.fillStyle = '#1a4d8f'; ctx.fillRect(0,0,canvas.width, canvas.height);
-        const continents = getContinentData(); 
-        ctx.fillStyle = '#d4a673'; 
-        ctx.strokeStyle = '#8b6914'; 
-        ctx.lineWidth = 3; // Thicker borders
-        ctx.lineJoin = 'round'; // Smoother corners
-        ctx.lineCap = 'round'; // Smoother line ends
-        let usedCanvasTexture = false;
-        if(Array.isArray(continents) && continents.length>0){
-            continents.forEach(cont=>{
-                try{
-                    if(Array.isArray(cont.coordinates) && cont.coordinates.length>0){
-                        console.log('Drawing continent ' + cont.id + ' with ' + cont.coordinates.length + ' points');
-                        ctx.beginPath();
-                        cont.coordinates.forEach((coord,i)=>{ 
-                            // coord is [lon, lat] in GeoJSON format
-                            const lon = coord[0];
-                            const lat = coord[1];
-                            const x = ((lon+180)/360)*canvas.width; 
-                            const y = ((90-lat)/180)*canvas.height; 
-                            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                        });
-                        ctx.closePath(); ctx.fill(); ctx.stroke();
-                        usedCanvasTexture = true;
-                    } else if(cont.boundingBox){
-                        // draw bounding box rectangle when polygon coords are unavailable
-                        const minLat = cont.boundingBox.minLat; const maxLat = cont.boundingBox.maxLat;
-                        const minLon = cont.boundingBox.minLon; const maxLon = cont.boundingBox.maxLon;
-                        const x1 = ((minLon+180)/360)*canvas.width; const y1 = ((90-maxLat)/180)*canvas.height;
-                        const x2 = ((maxLon+180)/360)*canvas.width; const y2 = ((90-minLat)/180)*canvas.height;
-                        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y1); ctx.lineTo(x2,y2); ctx.lineTo(x1,y2); ctx.closePath(); ctx.fill(); ctx.stroke();
-                        usedCanvasTexture = true;
-                    }
-                }catch(e){ console.error('continent draw error:'+e); }
-            });
-        }
-        let material;
-        if(usedCanvasTexture){
-            const earthTexture = new THREE.CanvasTexture(canvas); earthTexture.needsUpdate = true;
-            material = new THREE.MeshPhongMaterial({ map: earthTexture, specular:0x3366aa, shininess:30, emissive:0x0a2a5a, emissiveIntensity:0.2 });
-        } else {
-            // as a final fallback (should be rare) load a remote Earth texture so continents are visible
-            const loader = new THREE.TextureLoader();
-            const fallbackUrl = 'https://threejs.org/examples/textures/land_ocean_ice_cloud_2048.jpg';
-            const tex = loader.load(fallbackUrl);
-            material = new THREE.MeshPhongMaterial({ map: tex, specular:0x3366aa, shininess:30, emissive:0x0a2a5a, emissiveIntensity:0.2 });
-        }
-        const materialFinal = material;
-        const materialToUse = materialFinal;
-        const materialObj = materialToUse;
         
-        // use materialObj below
-        const materialInstance = materialObj;
+        // Use a high-quality Earth texture instead of canvas-drawn continents
+        const loader = new THREE.TextureLoader();
+        const earthTextureUrl = 'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg';
+        const earthTexture = loader.load(
+            earthTextureUrl,
+            function(texture) {
+                console.log('Earth texture loaded successfully');
+            },
+            undefined,
+            function(error) {
+                console.error('Failed to load Earth texture:', error);
+                // Fallback to another texture source
+                const fallbackUrl = 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg';
+                const fallbackTexture = loader.load(fallbackUrl);
+                if(earth && earth.material) {
+                    earth.material.map = fallbackTexture;
+                    earth.material.needsUpdate = true;
+                }
+            }
+        );
         
-        const materialToAssign = materialInstance;
+        const material = new THREE.MeshPhongMaterial({ 
+            map: earthTexture, 
+            specular: 0x333333, 
+            shininess: 25,
+            emissive: 0x112244,
+            emissiveIntensity: 0.15
+        });
         
-        // create earth with chosen material
-        const materialForEarth = materialToAssign;
-        const earthMeshMaterial = materialForEarth;
-        const materialUsed = earthMeshMaterial;
-        const materialRef = materialUsed;
-        const materialActual = materialRef;
-        const materialReady = materialActual;
-        const materialFinalReady = materialReady;
-        const materialReadyToUse = materialFinalReady;
-        const materialObjFinal = materialReadyToUse;
-        const materialToSet = materialObjFinal;
-        const material_real = materialToSet;
-        const material_final_real = material_real;
-        const finalMaterial = material_final_real;
+        earth = new THREE.Mesh(geometry, material); 
+        earthGroup.add(earth);
         
-        earth = new THREE.Mesh(geometry, finalMaterial); earthGroup.add(earth);
         // lights
-        scene.add(new THREE.AmbientLight(0x404040, 2.5)); const dl = new THREE.DirectionalLight(0xffffff,1.8); dl.position.set(10000,5000,5000); scene.add(dl);
+        scene.add(new THREE.AmbientLight(0x404040, 2.5)); 
+        const dl = new THREE.DirectionalLight(0xffffff, 1.8); 
+        dl.position.set(10000, 5000, 5000); 
+        scene.add(dl);
+        
         // events
         renderer.domElement.addEventListener('click', onClick);
         window.addEventListener('resize', onWindowResize);
