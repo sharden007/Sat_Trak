@@ -25,7 +25,12 @@ class SatelliteRepository {
         SatelliteInfo(33591, "NOAA 19", "Weather Satellite", "NOAA-19 - Polar-orbiting environmental satellite monitoring Earth's weather, atmosphere, and environment"),
         SatelliteInfo(36585, "GPS BIIF-1", "GPS Navigation", "GPS BIIF-1 (Navstar) - Part of the Global Positioning System constellation providing navigation and timing services"),
         SatelliteInfo(43013, "STARLINK-1007", "Communication", "Starlink-1007 - SpaceX broadband satellite providing global internet connectivity"),
-        SatelliteInfo(37820, "HUBBLE", "Space Telescope", "Hubble Space Telescope - NASA's premier space-based observatory for astronomical research and deep space imaging")
+        SatelliteInfo(37820, "HUBBLE", "Space Telescope", "Hubble Space Telescope - NASA's premier space-based observatory for astronomical research and deep space imaging"),
+        // Added popular satellites
+        SatelliteInfo(20580, "HUBBLE (20580)", "Space Telescope", "Hubble Space Telescope (alternate catalog id) - widely used for deep space imaging and research"),
+        SatelliteInfo(25994, "TERRA", "Earth Observation", "Terra (EOS AM-1) - NASA Earth observation satellite monitoring land, atmosphere, and oceans"),
+        SatelliteInfo(40069, "STARLINK-40069", "Communication", "Starlink broadband satellite (sample entry)"),
+        SatelliteInfo(41765, "SENTINEL-6", "Earth Observation", "Sentinel-6 Michael Freilich - Satellite for ocean surface topography monitoring")
     )
 
     private val moshi = Moshi.Builder()
