@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -136,82 +137,173 @@ fun AROverlay(
     userLongitude: Double,
     onSatelliteClick: (SatelliteData) -> Unit
 ) {
-    // Calculate satellite positions relative to user's view
-    val satelliteScreenPositions = remember(satellites, userAzimuth, userElevation) {
+    // Calculate all satellite positions (both in-view and off-screen)
+    val allSatellitePositions = remember(satellites, userAzimuth, userElevation) {
         satellites.mapNotNull { satellite ->
-            val position = calculateSatelliteScreenPosition(
-                satellite,
-                userLatitude,
-                userLongitude,
-                userAzimuth,
-                userElevation
-            )
-            position?.let { satellite to it }
+            val azimuth = calculateAzimuth(userLatitude, userLongitude, satellite.latitude, satellite.longitude)
+            val elevation = calculateElevation(userLatitude, userLongitude, satellite.latitude, satellite.longitude, satellite.altitude)
+
+            // Only include satellites above horizon
+            if (elevation < 0) return@mapNotNull null
+
+            val relativeAzimuth = normalizeAngle(azimuth - userAzimuth)
+            val relativeElevation = elevation - userElevation
+
+            satellite to Triple(relativeAzimuth, relativeElevation, azimuth)
         }
     }
 
+    // Separate in-view and off-screen satellites
+    val horizontalFOV = 90f
+    val verticalFOV = 60f
+
+    val inViewSatellites = allSatellitePositions.filter { (_, pos) ->
+        val (relAz, relEl, _) = pos
+        abs(relAz) <= horizontalFOV / 2 && abs(relEl) <= verticalFOV / 2
+    }
+
+    val offScreenSatellites = allSatellitePositions.filter { (_, pos) ->
+        val (relAz, relEl, _) = pos
+        abs(relAz) > horizontalFOV / 2 || abs(relEl) > verticalFOV / 2
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // Canvas for drawing satellite markers
+        // Canvas for drawing satellite markers and off-screen indicators
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
 
-            satelliteScreenPositions.forEach { (satellite, pos) ->
-                // Convert normalized coordinates to screen pixels
-                val x = width * pos.first
-                val y = height * pos.second
+            // Draw in-view satellites
+            inViewSatellites.forEach { (satellite, pos) ->
+                val (relAz, relEl, _) = pos
+                val x = width * (0.5f + (relAz / horizontalFOV))
+                val y = height * (0.5f - (relEl / verticalFOV))
 
-                // Only draw if within screen bounds with some margin
-                if (x in -100f..width + 100f && y in -100f..height + 100f) {
-                    // Draw satellite marker with distinct color
-                    val color = SatelliteColorUtils.getColorForSatellite(satellite.id)
+                val color = SatelliteColorUtils.getColorForSatellite(satellite.id)
 
-                    // Draw outer circle
-                    drawCircle(
-                        color = color,
-                        radius = 30f,
-                        center = Offset(x, y),
-                        style = Stroke(width = 3f)
-                    )
+                // Draw outer circle
+                drawCircle(
+                    color = color,
+                    radius = 30f,
+                    center = Offset(x, y),
+                    style = Stroke(width = 3f)
+                )
 
-                    // Draw inner filled circle
-                    drawCircle(
-                        color = color.copy(alpha = 0.5f),
-                        radius = 15f,
-                        center = Offset(x, y)
-                    )
+                // Draw inner filled circle
+                drawCircle(
+                    color = color.copy(alpha = 0.5f),
+                    radius = 15f,
+                    center = Offset(x, y)
+                )
 
-                    // Draw cross-hair
-                    drawLine(
-                        color = color,
-                        start = Offset(x - 40f, y),
-                        end = Offset(x + 40f, y),
-                        strokeWidth = 2f
-                    )
-                    drawLine(
-                        color = color,
-                        start = Offset(x, y - 40f),
-                        end = Offset(x, y + 40f),
-                        strokeWidth = 2f
-                    )
+                // Draw cross-hair
+                drawLine(
+                    color = color,
+                    start = Offset(x - 40f, y),
+                    end = Offset(x + 40f, y),
+                    strokeWidth = 2f
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(x, y - 40f),
+                    end = Offset(x, y + 40f),
+                    strokeWidth = 2f
+                )
+            }
+
+            // Draw off-screen satellite indicators with arrows
+            offScreenSatellites.forEach { (satellite, pos) ->
+                val (relAz, relEl, absoluteAzimuth) = pos
+                val color = SatelliteColorUtils.getColorForSatellite(satellite.id)
+
+                // Determine edge position for indicator
+                val edgeMargin = 60f
+                val indicatorX: Float
+                val indicatorY: Float
+                val arrowRotation: Float
+
+                // Clamp to screen edges
+                val clampedX = (0.5f + (relAz / horizontalFOV)).coerceIn(0f, 1f)
+                val clampedY = (0.5f - (relEl / verticalFOV)).coerceIn(0f, 1f)
+
+                // Determine which edge and position
+                when {
+                    // Left edge
+                    relAz < -horizontalFOV / 2 -> {
+                        indicatorX = edgeMargin
+                        indicatorY = (height * clampedY).coerceIn(edgeMargin, height - edgeMargin)
+                        arrowRotation = 180f // Arrow pointing left
+                    }
+                    // Right edge
+                    relAz > horizontalFOV / 2 -> {
+                        indicatorX = width - edgeMargin
+                        indicatorY = (height * clampedY).coerceIn(edgeMargin, height - edgeMargin)
+                        arrowRotation = 0f // Arrow pointing right
+                    }
+                    // Top edge
+                    relEl > verticalFOV / 2 -> {
+                        indicatorX = (width * clampedX).coerceIn(edgeMargin, width - edgeMargin)
+                        indicatorY = edgeMargin
+                        arrowRotation = -90f // Arrow pointing up
+                    }
+                    // Bottom edge
+                    else -> {
+                        indicatorX = (width * clampedX).coerceIn(edgeMargin, width - edgeMargin)
+                        indicatorY = height - edgeMargin
+                        arrowRotation = 90f // Arrow pointing down
+                    }
                 }
+
+                // Draw arrow indicator
+                val arrowPath = Path().apply {
+                    // Arrow pointing right (will be rotated)
+                    moveTo(0f, 0f)
+                    lineTo(-20f, -15f)
+                    lineTo(-20f, 15f)
+                    close()
+                }
+
+                // Transform and draw arrow
+                val radians = Math.toRadians(arrowRotation.toDouble()).toFloat()
+                val cosR = cos(radians)
+                val sinR = sin(radians)
+
+                val transformedPath = Path().apply {
+                    arrowPath.reset()
+                    moveTo(indicatorX, indicatorY)
+                    lineTo(indicatorX - 20f * cosR + 15f * sinR, indicatorY - 20f * sinR - 15f * cosR)
+                    lineTo(indicatorX - 20f * cosR - 15f * sinR, indicatorY - 20f * sinR + 15f * cosR)
+                    close()
+                }
+
+                drawPath(
+                    path = transformedPath,
+                    color = color,
+                    style = androidx.compose.ui.graphics.drawscope.Fill
+                )
+
+                // Draw circle behind arrow
+                drawCircle(
+                    color = color.copy(alpha = 0.3f),
+                    radius = 25f,
+                    center = Offset(indicatorX, indicatorY)
+                )
             }
         }
 
-        // Text labels for satellites - using BoxWithConstraints to get size
+        // In-view satellite labels
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidth = constraints.maxWidth.toFloat()
             val screenHeight = constraints.maxHeight.toFloat()
             val density = LocalContext.current.resources.displayMetrics.density
 
-            satelliteScreenPositions.forEach { (satellite, pos) ->
-                val xDp = (screenWidth * pos.first / density).dp
-                val yDp = (screenHeight * pos.second / density).dp
+            inViewSatellites.forEach { (satellite, pos) ->
+                val (relAz, relEl, _) = pos
+                val xDp = (screenWidth * (0.5f + (relAz / horizontalFOV)) / density).dp
+                val yDp = (screenHeight * (0.5f - (relEl / verticalFOV)) / density).dp
 
-                // Label card
                 Card(
-                    modifier = Modifier
-                        .offset(x = xDp, y = yDp + 50.dp),
+                    modifier = Modifier.offset(x = xDp, y = yDp + 50.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
                     )
@@ -230,6 +322,68 @@ fun AROverlay(
                             text = "Alt: ${String.format("%.0f", satellite.altitude)} km",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            // Off-screen satellite labels with directional info
+            offScreenSatellites.forEach { (satellite, pos) ->
+                val (relAz, relEl, absoluteAzimuth) = pos
+                val color = SatelliteColorUtils.getColorForSatellite(satellite.id)
+
+                val edgeMargin = 60f / density
+                val clampedX = (0.5f + (relAz / horizontalFOV)).coerceIn(0f, 1f)
+                val clampedY = (0.5f - (relEl / verticalFOV)).coerceIn(0f, 1f)
+
+                val labelX: Dp
+                val labelY: Dp
+                val direction: String
+
+                when {
+                    relAz < -horizontalFOV / 2 -> {
+                        labelX = (edgeMargin + 30).dp
+                        labelY = ((screenHeight / density) * clampedY).dp
+                        direction = "← ${azimuthToDirection(absoluteAzimuth)}"
+                    }
+                    relAz > horizontalFOV / 2 -> {
+                        labelX = ((screenWidth / density) - edgeMargin - 100).dp
+                        labelY = ((screenHeight / density) * clampedY).dp
+                        direction = "${azimuthToDirection(absoluteAzimuth)} →"
+                    }
+                    relEl > verticalFOV / 2 -> {
+                        labelX = ((screenWidth / density) * clampedX - 50).dp
+                        labelY = (edgeMargin + 30).dp
+                        direction = "↑ ${String.format("%.0f", relEl)}°"
+                    }
+                    else -> {
+                        labelX = ((screenWidth / density) * clampedX - 50).dp
+                        labelY = ((screenHeight / density) - edgeMargin - 50).dp
+                        direction = "↓ ${String.format("%.0f", abs(relEl))}°"
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.offset(x = labelX, y = labelY),
+                    colors = CardDefaults.cardColors(
+                        containerColor = color.copy(alpha = 0.9f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = satellite.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = direction,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                     }
                 }
