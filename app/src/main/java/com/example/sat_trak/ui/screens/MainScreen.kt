@@ -1,5 +1,8 @@
 package com.example.sat_trak.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -7,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,8 +25,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.sat_trak.data.models.SatelliteData
+import com.example.sat_trak.location.rememberLocationProvider
+import com.example.sat_trak.ui.components.ARCameraView
 import com.example.sat_trak.ui.components.GlobeWebView
 import com.example.sat_trak.ui.viewmodel.SatelliteViewModel
+import com.example.sat_trak.sensors.rememberOrientationSensor
+import com.example.sat_trak.utils.SatelliteColorUtils
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.*
@@ -35,14 +43,42 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     val errorMessage = viewModel.errorMessage.value
 
     var selectedSatellite by remember { mutableStateOf<SatelliteData?>(null) }
-    var userSelectedSatellite by remember { mutableStateOf(false) } // Track if user manually clicked
+    var userSelectedSatellite by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
     var showApiDataDialog by remember { mutableStateOf(false) }
     var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
     var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    // New UI state: trails on/off (trail length is now fixed at 130)
+    // AR Mode state
+    var showARMode by remember { mutableStateOf(false) }
+
+    // Sensor and location integration
+    val orientationSensor = rememberOrientationSensor()
+    val locationState = rememberLocationProvider()
+
+    // Update ViewModel with user location
+    LaunchedEffect(locationState.latitude, locationState.longitude) {
+        viewModel.updateUserLocation(locationState.latitude, locationState.longitude)
+    }
+
+    // Permission launcher for location and notifications
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        // Handle permission results
+    }
+
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        )
+    }
+
     var showTrails by remember { mutableStateOf(true) }
 
     // Auto-cycle through satellites for telemetry display (5 seconds each)
@@ -54,29 +90,45 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                     selectedSatellite = satellites[currentIndex % satellites.size]
                     currentIndex++
                 }
-                kotlinx.coroutines.delay(5000L) // 5 seconds
+                kotlinx.coroutines.delay(5000L)
             }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 3D Globe WebView
-        GlobeWebView(
-            satellites = satellites,
-            modifier = Modifier.fillMaxSize(),
-            onSatelliteClick = { satellite ->
-                selectedSatellite = satellite
-                userSelectedSatellite = true // User manually selected
-                showBottomSheet = true
-            },
-            onZoomControlsReady = { zoomIn, zoomOut ->
-                onZoomIn = zoomIn
-                onZoomOut = zoomOut
-            },
-            // use named arguments for trailing parameters to avoid positional-after-named error
-            showTrails = showTrails,
-            selectedSatelliteId = selectedSatellite?.id
-        )
+        if (showARMode) {
+            // AR Camera View Mode
+            ARCameraView(
+                satellites = satellites,
+                userAzimuth = orientationSensor.azimuth,
+                userElevation = orientationSensor.elevation,
+                userLatitude = locationState.latitude,
+                userLongitude = locationState.longitude,
+                modifier = Modifier.fillMaxSize(),
+                onSatelliteClick = { satellite ->
+                    selectedSatellite = satellite
+                    userSelectedSatellite = true
+                    showBottomSheet = true
+                }
+            )
+        } else {
+            // 3D Globe WebView (existing mode)
+            GlobeWebView(
+                satellites = satellites,
+                modifier = Modifier.fillMaxSize(),
+                onSatelliteClick = { satellite ->
+                    selectedSatellite = satellite
+                    userSelectedSatellite = true
+                    showBottomSheet = true
+                },
+                onZoomControlsReady = { zoomIn, zoomOut ->
+                    onZoomIn = zoomIn
+                    onZoomOut = zoomOut
+                },
+                showTrails = showTrails,
+                selectedSatelliteId = selectedSatellite?.id
+            )
+        }
 
         // Loading Indicator
         if (isLoading && satellites.isEmpty()) {
@@ -263,18 +315,91 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             }
         }
 
-        // Controls for trails (moved from top-center to bottom-center above rotation)
+        // Controls for trails and AR mode toggle
         Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp),
+                .padding(bottom = 16.dp, start = 16.dp, end = 16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Orbital Trails", style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Switch(checked = showTrails, onCheckedChange = { showTrails = it })
+            Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                // AR Mode Toggle with visual icons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Globe View option
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "🌍",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = if (!showARMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "Globe View",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (!showARMode) FontWeight.Bold else FontWeight.Normal,
+                            color = if (!showARMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+
+                    // Switch in the middle
+                    Switch(
+                        checked = showARMode,
+                        onCheckedChange = { showARMode = it }
+                    )
+
+                    // Camera View option
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "📷",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = if (showARMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "Camera View",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (showARMode) FontWeight.Bold else FontWeight.Normal,
+                            color = if (showARMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                // Orbital Trails Toggle (only visible in globe mode)
+                if (!showARMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Orbital Trails", style = MaterialTheme.typography.bodySmall)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(checked = showTrails, onCheckedChange = { showTrails = it })
+                    }
+                }
+
+                // Location Info (visible in AR mode)
+                if (showARMode && locationState.hasPermission) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "📍 Your Location",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "${String.format("%.4f", locationState.latitude)}°, ${String.format("%.4f", locationState.longitude)}°",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -377,11 +502,7 @@ fun ApiDataContent(satellites: List<SatelliteData>, isLoading: Boolean) {
                             Surface(
                                 modifier = Modifier.size(12.dp),
                                 shape = MaterialTheme.shapes.small,
-                                color = when (satellite.id) {
-                                    25544 -> MaterialTheme.colorScheme.error
-                                    33591 -> MaterialTheme.colorScheme.tertiary
-                                    else -> MaterialTheme.colorScheme.primaryContainer
-                                }
+                                color = SatelliteColorUtils.getColorForSatellite(satellite.id)
                             ) {}
                         }
 
@@ -455,11 +576,7 @@ fun SatelliteDetailSheet(satellite: SatelliteData) {
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = MaterialTheme.shapes.medium,
-                color = when (satellite.id) {
-                    25544 -> MaterialTheme.colorScheme.error
-                    33591 -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.primaryContainer
-                }
+                color = SatelliteColorUtils.getColorForSatellite(satellite.id)
             ) {}
         }
 

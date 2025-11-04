@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.sat_trak.data.models.SatelliteData
 import com.example.sat_trak.data.repository.ContinentDataLoader
+import com.example.sat_trak.utils.SatelliteColorUtils
 import java.lang.StringBuilder
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -114,10 +115,12 @@ fun GlobeWebView(
                 } catch (_: Throwable) { }
 
                 // Build a safe JSON representation of the satellites list by escaping string fields
+                // Include color information for each satellite
                 val satellitesJson = satellites.joinToString(",") { sat ->
                     val nameEsc = sat.name.replace("\"", "\\\"")
                     val typeEsc = sat.type.replace("\"", "\\\"")
-                    "{\"id\":${sat.id},\"name\":\"$nameEsc\",\"x\":${sat.x},\"y\":${sat.y},\"z\":${sat.z},\"lat\":${sat.latitude},\"lon\":${sat.longitude},\"alt\":${sat.altitude},\"type\":\"$typeEsc\"}"
+                    val colorHex = SatelliteColorUtils.getIntColorForSatellite(sat.id)
+                    "{\"id\":${sat.id},\"name\":\"$nameEsc\",\"x\":${sat.x},\"y\":${sat.y},\"z\":${sat.z},\"lat\":${sat.latitude},\"lon\":${sat.longitude},\"alt\":${sat.altitude},\"type\":\"$typeEsc\",\"color\":$colorHex}"
                 }
 
                 // Queue updates if the page hasn't defined updateSatellites yet. This prevents the
@@ -387,7 +390,9 @@ private fun getHtmlContent(): String {
         if(trailsGroup){ while(trailsGroup.children.length) trailsGroup.remove(trailsGroup.children[0]); }
         const cfg = getConfig(); satellites.forEach(sat=>{
             const geometry = new THREE.SphereGeometry(120, 16, 16);
-            const material = new THREE.MeshBasicMaterial({ color: sat.id===25544?0xff0000:(sat.id===33591?0x00ff00:0xffff00) });
+            // Use the color provided from Kotlin, or fallback to yellow
+            const satColor = sat.color !== undefined ? sat.color : 0xffff00;
+            const material = new THREE.MeshBasicMaterial({ color: satColor });
             // compute position: use provided x/y/z when available and non-zero, otherwise compute from lat/lon
             let posVec;
             try{
@@ -423,11 +428,13 @@ private fun getHtmlContent(): String {
             pts.push(latLonToVector3(lat, lon, orbitalRadius));
             lon += deltaLonDeg;
         }
+        // Use the satellite's color for trails, or fallback to cyan
+        const trailColor = sat.color !== undefined ? sat.color : 0x00ffff;
         for(let i=0;i<pts.length-1;i++){
             const segGeom = new THREE.BufferGeometry().setFromPoints([pts[i], pts[i+1]]);
             const t = i / Math.max(1, pts.length-1);
             const opacity = 0.9 * (1 - t);
-            const mat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: opacity });
+            const mat = new THREE.LineBasicMaterial({ color: trailColor, transparent: true, opacity: opacity });
             const line = new THREE.Line(segGeom, mat);
             if(trailsGroup) trailsGroup.add(line);
         }
@@ -530,7 +537,7 @@ private fun getHtmlContent(): String {
     try{
         console.log('continents injected, count=' + ((window.__CONTINENTS_DATA && window.__CONTINENTS_DATA.length) || 0));
     }catch(e){}
-    try{ if(typeof applyConfig === 'function'){ applyConfig(); console.log('applyConfig called after continents injection'); } }catch(e){ console.error(e); }
+    try{ if(typeof applyConfig === 'function'){ applyConfig(); console.log('applyConfig called after continents injection'); } }catch(e) { console.error(e); }
     try{
         if(window && window.__pendingSatellites){
             if(typeof updateSatellites === 'function'){
@@ -538,7 +545,7 @@ private fun getHtmlContent(): String {
                 catch(e){ console.error('processing pending satellites:'+e); }
             }
         }
-    }catch(e){ console.error(e) }
+    }catch(e) { console.error(e) }
     </script>
 
 </body>

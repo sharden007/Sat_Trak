@@ -1,6 +1,7 @@
 package com.example.sat_trak.data.repository
 
 import android.util.Log
+import com.example.sat_trak.BuildConfig
 import com.example.sat_trak.data.api.N2YOApiService
 import com.example.sat_trak.data.models.SatelliteData
 import com.squareup.moshi.Moshi
@@ -14,7 +15,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 class SatelliteRepository {
-    private val apiKey = "ZKU3NJ-D77EGQ-7MB4U3-5LC4"
+    private val apiKey = BuildConfig.N2YO_API_KEY
     private val observerLat = 0.0
     private val observerLng = 0.0
     private val observerAlt = 0
@@ -26,10 +27,9 @@ class SatelliteRepository {
         SatelliteInfo(36585, "GPS BIIF-1", "GPS Navigation", "GPS BIIF-1 (Navstar) - Part of the Global Positioning System constellation providing navigation and timing services"),
         SatelliteInfo(43013, "STARLINK-1007", "Communication", "Starlink-1007 - SpaceX broadband satellite providing global internet connectivity"),
         SatelliteInfo(37820, "HUBBLE", "Space Telescope", "Hubble Space Telescope - NASA's premier space-based observatory for astronomical research and deep space imaging"),
-        // Added popular satellites
-        SatelliteInfo(20580, "HUBBLE (20580)", "Space Telescope", "Hubble Space Telescope (alternate catalog id) - widely used for deep space imaging and research"),
+        SatelliteInfo(48274, "TIANGONG", "Space Station", "Tiangong Space Station - China's modular space station in low Earth orbit for scientific research"),
         SatelliteInfo(25994, "TERRA", "Earth Observation", "Terra (EOS AM-1) - NASA Earth observation satellite monitoring land, atmosphere, and oceans"),
-        SatelliteInfo(40069, "STARLINK-40069", "Communication", "Starlink broadband satellite (sample entry)"),
+        SatelliteInfo(27424, "AQUA", "Earth Observation", "Aqua (EOS PM-1) - NASA satellite collecting data on Earth's water cycle and climate"),
         SatelliteInfo(41765, "SENTINEL-6", "Earth Observation", "Sentinel-6 Michael Freilich - Satellite for ocean surface topography monitoring")
     )
 
