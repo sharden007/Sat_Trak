@@ -17,6 +17,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Enable 16KB page size support
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
+
         // Load API key from local.properties
         val properties = org.jetbrains.kotlin.konan.properties.Properties()
         val localPropertiesFile = rootProject.file("local.properties")
@@ -36,6 +41,14 @@ android {
             )
         }
     }
+
+    // Configure packaging options for 16KB page alignment
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
