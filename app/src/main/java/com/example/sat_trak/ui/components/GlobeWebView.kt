@@ -14,6 +14,9 @@ import com.example.sat_trak.data.repository.ContinentDataLoader
 import com.example.sat_trak.utils.SatelliteColorUtils
 import java.lang.StringBuilder
 
+private const val TAG_STORE_KEY = 0x53415453 // 'SATS'
+private class LatestSatStore { @Volatile var list: List<SatelliteData> = emptyList() }
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun GlobeWebView(
@@ -63,6 +66,8 @@ fun GlobeWebView(
             }
 
             WebView(context).apply {
+                val store = LatestSatStore()
+                this.setTag(TAG_STORE_KEY, store)
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.allowContentAccess = true
@@ -76,19 +81,19 @@ fun GlobeWebView(
                     @JavascriptInterface
                     fun onSatelliteClicked(satelliteId: Int) {
                         Log.d("GlobeWebView", "Satellite clicked: ID=$satelliteId")
-                        // Post to main thread to update UI
+                        val current = (getTag(TAG_STORE_KEY) as? LatestSatStore)?.list ?: emptyList()
+                        // Post to main thread to update UI using the latest satellites list
                         post {
-                            satellites.find { it.id == satelliteId }?.let { satellite ->
+                            current.find { it.id == satelliteId }?.let { satellite ->
                                 Log.d("GlobeWebView", "Found satellite: ${satellite.name}, triggering callback")
                                 onSatelliteClick(satellite)
-                            } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in list")
+                            } ?: Log.w("GlobeWebView", "Satellite ID=$satelliteId not found in latest list (size=${current.size})")
                         }
                     }
 
                     @Suppress("unused")
                     @JavascriptInterface
                     fun onConsole(message: String) {
-                        // forward JS console messages to Android logcat for debugging
                         Log.d("GlobeWebViewJS", message)
                     }
                 }, "Android")
@@ -107,6 +112,9 @@ fun GlobeWebView(
             }
         },
         update = { webView ->
+            // Keep the store up-to-date with the latest satellites list
+            try { (webView.getTag(TAG_STORE_KEY) as? LatestSatStore)?.list = satellites } catch (_: Throwable) {}
+
             if (satellites.isNotEmpty()) {
                 // Also log to the WebView console (forwarded to Android) the count being pushed
                 try {
@@ -252,6 +260,7 @@ private fun getHtmlContent(): String {
 
     let scene, camera, renderer, earth, earthGroup, trailsGroup;
     let satelliteObjects = []; let satelliteLabels = []; let currentSatellites = [];
+    let satelliteHitObjects = [];
     let selectedHighlight = null;
     let highlightedId = null;
     
@@ -408,14 +417,23 @@ private fun getHtmlContent(): String {
     function updateSatellites(satellites){
         try{ console.log('updateSatellites called, count=' + (satellites? satellites.length : 0)); }catch(e){}
         currentSatellites = satellites;
-        satelliteObjects.forEach(o=>earthGroup.remove(o)); satelliteLabels.forEach(l=>earthGroup.remove(l)); satelliteObjects = []; satelliteLabels = [];
+        satelliteObjects.forEach(o=>earthGroup.remove(o));
+        satelliteLabels.forEach(l=>earthGroup.remove(l));
+        satelliteHitObjects.forEach(o=>earthGroup.remove(o));
+        satelliteObjects = []; satelliteLabels = []; satelliteHitObjects = [];
         if(trailsGroup){ while(trailsGroup.children.length) trailsGroup.remove(trailsGroup.children[0]); }
-        const cfg = getConfig(); satellites.forEach(sat=>{
-            const geometry = new THREE.SphereGeometry(120, 16, 16);
-            // Use the color provided from Kotlin, or fallback to yellow
+        const cfg = getConfig(); 
+        
+        satellites.forEach(sat=>{
+            // Visible satellite sphere (moderate size for aesthetics)
+            const visGeom = new THREE.SphereGeometry(200, 32, 32);
             const satColor = sat.color !== undefined ? sat.color : 0xffff00;
-            const material = new THREE.MeshBasicMaterial({ color: satColor });
-            // compute position: use provided x/y/z when available and non-zero, otherwise compute from lat/lon
+            const visMat = new THREE.MeshBasicMaterial({ color: satColor });
+
+            // Large invisible hit target for easy tapping
+            const hitGeom = new THREE.SphereGeometry(800, 16, 16);
+            const hitMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0.0, transparent: true, depthWrite: false });
+            
             let posVec;
             try{
                 if(sat.x != null && sat.y != null && sat.z != null && (sat.x !== 0 || sat.y !== 0 || sat.z !== 0)){
@@ -426,12 +444,27 @@ private fun getHtmlContent(): String {
             }catch(e){
                 posVec = latLonToVector3(sat.lat, sat.lon, 6371 + (sat.alt || 400));
             }
-            const sphere = new THREE.Mesh(geometry, material);
-            sphere.position.copy(posVec);
-            sphere.userData={id:sat.id}; earthGroup.add(sphere); satelliteObjects.push(sphere);
-            // labels skipped for brevity
-            if(cfg.showTrails) drawProjectedTrail(sat, cfg.trailSteps||40);
+
+            const visSphere = new THREE.Mesh(visGeom, visMat);
+            visSphere.position.copy(posVec);
+            visSphere.userData = { id: sat.id, type: 'visible', name: sat.name };
+
+            const hitSphere = new THREE.Mesh(hitGeom, hitMat);
+            hitSphere.position.copy(posVec);
+            hitSphere.userData = { id: sat.id, type: 'hit', name: sat.name };
+
+            earthGroup.add(visSphere);
+            earthGroup.add(hitSphere);
+
+            satelliteObjects.push(visSphere);
+            satelliteHitObjects.push(hitSphere);
+
+            console.log('Added satellite:', sat.name, 'ID:', sat.id, 'pos:', posVec.x.toFixed(2), posVec.y.toFixed(2), posVec.z.toFixed(2));
+
+            if(cfg.showTrails) drawProjectedTrail(sat, (cfg.trailSteps||40));
         });
+        
+        console.log('Total visible objects:', satelliteObjects.length, 'Total hit objects:', satelliteHitObjects.length);
     }
 
     function drawProjectedTrail(sat, steps){
@@ -463,35 +496,47 @@ private fun getHtmlContent(): String {
     }
 
     function onClick(e){
-        console.log('Click detected on canvas');
+        console.log('=== CLICK EVENT DETECTED ===');
         const rect = renderer.domElement.getBoundingClientRect();
         const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         const mouse = new THREE.Vector2(x, y);
         const ray = new THREE.Raycaster();
-        // Increase raycaster threshold to make satellites easier to click
-        ray.params.Points.threshold = 200;
         ray.setFromCamera(mouse, camera);
-        const intersects = ray.intersectObjects(satelliteObjects, false);
-        console.log('Raycaster check: ' + intersects.length + ' intersections found');
+
+        // First try precise hit objects (large invisible)
+        let intersects = ray.intersectObjects(satelliteHitObjects, true);
+        console.log('Hit targets intersections:', intersects.length);
+        
+        // Fallback: try visible spheres
+        if(intersects.length === 0){
+            const fallback = ray.intersectObjects(satelliteObjects, true);
+            console.log('Visible intersections:', fallback.length);
+            intersects = fallback;
+        }
+        
+        // Fallback 2: deep-check all earthGroup children
+        if(intersects.length === 0){
+            const deep = ray.intersectObjects(earthGroup.children, true);
+            console.log('Deep intersections:', deep.length);
+            // Filter to those with an id
+            intersects = deep.filter(x => x.object && x.object.userData && x.object.userData.id != null);
+            console.log('Deep intersections with id:', intersects.length);
+        }
+
         if(intersects.length > 0){
             const clicked = intersects[0].object;
-            console.log('Clicked object userData:', clicked.userData);
-            const sat = currentSatellites.find(s => s.id === clicked.userData.id);
-            if(sat){
-                console.log('Found satellite:', sat.name, 'ID:', sat.id);
-                if(typeof Android !== 'undefined' && Android.onSatelliteClicked){
-                    console.log('Calling Android.onSatelliteClicked');
-                    Android.onSatelliteClicked(sat.id);
-                } else {
-                    console.error('Android interface not available');
-                }
-            } else {
-                console.error('Satellite not found in currentSatellites array');
+            const id = clicked.userData?.id;
+            console.log('✓ Clicked satellite id:', id, 'type:', clicked.userData?.type, 'name:', clicked.userData?.name);
+            if(id != null){
+                try{ Android.onSatelliteClicked(id); }catch(err){ console.error('Android callback failed', err); }
             }
         } else {
-            console.log('No satellite clicked - click on empty space');
+            const infoDiv = document.getElementById('info');
+            if(infoDiv){ infoDiv.style.display = 'block'; infoDiv.innerText = 'Click registered, no satellite hit'; setTimeout(()=> infoDiv.style.display='none', 1200); }
+            console.log('✗ No satellite clicked');
         }
+        console.log('=== END CLICK EVENT ===');
     }
 
     function onWindowResize(){
@@ -505,7 +550,8 @@ private fun getHtmlContent(): String {
         earthGroup.rotation.x = 0.4;
         earthGroup.rotation.y += rotationSpeed;
         if(selectedHighlight && highlightedId != null){
-            const obj = satelliteObjects.find(o => o.userData && o.userData.id === highlightedId);
+            const obj = satelliteHitObjects.find(o => o.userData && o.userData.id === highlightedId) ||
+                        satelliteObjects.find(o => o.userData && o.userData.id === highlightedId);
             if(obj){ selectedHighlight.position.copy(obj.position); }
         }
         renderer.render(scene, camera);

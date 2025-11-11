@@ -83,16 +83,18 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
 
     var showTrails by remember { mutableStateOf(true) }
 
-    // Auto-cycle through satellites for telemetry display (5 seconds each)
-    LaunchedEffect(satellites, userSelectedSatellite) {
-        if (satellites.isNotEmpty() && !userSelectedSatellite) {
+    // Auto-cycle through satellites for telemetry display (10 seconds each - doubled from 5)
+    // PAUSE when Bird's Eye View is showing or bottom sheet is open
+    LaunchedEffect(satellites, userSelectedSatellite, showBirdsEyeView, showBottomSheet) {
+        if (satellites.isNotEmpty() && !userSelectedSatellite && !showBirdsEyeView && !showBottomSheet) {
             var currentIndex = 0
             while (true) {
-                if (!userSelectedSatellite) {
+                // Check conditions again inside loop
+                if (!userSelectedSatellite && !showBirdsEyeView && !showBottomSheet) {
                     selectedSatellite = satellites[currentIndex % satellites.size]
                     currentIndex++
                 }
-                kotlinx.coroutines.delay(5000L)
+                kotlinx.coroutines.delay(10000L) // Changed from 5000L to 10000L (doubled)
             }
         }
     }
@@ -452,6 +454,23 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             BirdsEyeViewDialog(
                 satellite = selectedSatellite!!,
                 onDismiss = { showBirdsEyeView = false }
+            )
+        }
+
+        // Resume Auto Cycle button (appears only after manual selection, not during Bird's Eye)
+        if (userSelectedSatellite && !showBirdsEyeView) {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    userSelectedSatellite = false
+                    selectedSatellite = null
+                },
+                text = { Text("Resume Auto Cycle") },
+                icon = { Text("🔄") },
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
             )
         }
     }
