@@ -28,7 +28,11 @@ fun GlobeWebView(
     showTrails: Boolean = true,
     trailSteps: Int = 130,
     // optional selected satellite id (null = none)
-    selectedSatelliteId: Int? = null
+    selectedSatelliteId: Int? = null,
+    // Bird's Eye View mode - disables rotation and focuses on satellite
+    birdsEyeMode: Boolean = false,
+    focusLatitude: Double? = null,
+    focusLongitude: Double? = null
 ) {
     AndroidView(
         modifier = modifier.fillMaxSize(),
@@ -163,6 +167,24 @@ fun GlobeWebView(
                 { webView.evaluateJavascript("zoomIn();", null) },
                 { webView.evaluateJavascript("zoomOut();", null) }
             )
+
+            // Bird's Eye View mode - disables rotation and focuses on satellite
+            try {
+                if (birdsEyeMode && selectedSatelliteId != null) {
+                    val targetSatellite = satellites.find { it.id == selectedSatelliteId }
+                    targetSatellite?.let { sat ->
+                        val lat = sat.latitude
+                        val lon = sat.longitude
+                        val jsFocus = "setCameraFocus(${lat}, ${lon});"
+                        webView.evaluateJavascript(jsFocus, null)
+                    }
+                } else if (!birdsEyeMode) {
+                    // Exit Bird's Eye View mode and restore normal rotation
+                    webView.evaluateJavascript("if(typeof exitBirdsEyeView === 'function'){ exitBirdsEyeView(); }", null)
+                }
+            } catch (_: Throwable) {
+                // ignore
+            }
         }
     )
 
@@ -182,12 +204,10 @@ private fun getHtmlContent(): String {
         body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
         canvas { display: block; width: 100%; height: 100%; }
         #info { position: absolute; top: 10px; right: 10px; color: #fff; background: rgba(0,0,0,0.7); padding:10px; border-radius:5px; font-size:12px; max-width:250px; pointer-events:none; display:none }
-        #rotationToggle { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.95); color:#fff; border:3px solid #4CAF50; padding:15px 25px; border-radius:10px; font-size:16px; cursor:pointer; z-index:10000 }
     </style>
 </head>
 <body>
 <div id="info"></div>
-<button id="rotationToggle">🌍 Simulated Speed</button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
     // forward console messages to Android for debugging (Android.onConsole will receive strings)
@@ -266,16 +286,72 @@ private fun getHtmlContent(): String {
     
     // Rotation speed control
     let rotationSpeed = 0.0009; // Simulated speed (default)
-    let isRealTimeSpeed = false; // false = simulated, true = real-time
+    let birdsEyeViewMode = false; // Track if we're in Bird's Eye View mode
+    let targetCameraRotation = null; // Target rotation for Bird's Eye View
+
+    // Set camera focus for Bird's Eye View mode
+    function setCameraFocus(lat, lon) {
+        try {
+            birdsEyeViewMode = true;
+            rotationSpeed = 0; // Stop rotation
+            
+            // Calculate the rotation needed to center the view on the satellite
+            // Convert lat/lon to rotation angles
+            const lonRad = lon * Math.PI / 180.0;
+            const latRad = lat * Math.PI / 180.0;
+            
+            // Set the earth rotation to center on this location
+            earthGroup.rotation.x = 0.4 - latRad * 0.5; // Adjust X for latitude
+            earthGroup.rotation.y = -lonRad; // Adjust Y for longitude
+            
+            targetCameraRotation = { x: earthGroup.rotation.x, y: earthGroup.rotation.y };
+            
+            console.log('Bird\'s Eye View mode activated: focusing on lat=' + lat + ', lon=' + lon);
+        } catch(e) {
+            console.error('Error in setCameraFocus:', e);
+        }
+    }
+    
+    // Exit Bird's Eye View mode
+    function exitBirdsEyeView() {
+        try {
+            console.log('exitBirdsEyeView called - restoring normal view');
+            birdsEyeViewMode = false;
+            rotationSpeed = 0.0009; // Resume rotation at simulated speed
+            targetCameraRotation = null;
+            
+            // Reset camera position and rotation smoothly
+            camera.position.set(0, 0, 18000);
+            camera.lookAt(0, 0, 0);
+            
+            // Reset earth rotation to default orientation
+            earthGroup.rotation.x = 0.4;
+            earthGroup.rotation.y = 0;
+            earthGroup.rotation.z = 0;
+            
+            // Force a render update
+            if(typeof renderer !== 'undefined' && renderer) {
+                renderer.render(scene, camera);
+            }
+            
+            console.log('Bird\'s Eye View mode deactivated - view restored');
+        } catch(e) {
+            console.error('Error in exitBirdsEyeView:', e);
+        }
+    }
 
     function init(){
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 50000);
-        camera.position.z = 18000;
+        camera.position.set(0, 0, 18000); // Ensure camera starts at correct position
+        camera.lookAt(0, 0, 0); // Ensure camera looks at center
         renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
         document.body.appendChild(renderer.domElement);
-        earthGroup = new THREE.Group(); 
+        earthGroup = new THREE.Group();
+        earthGroup.rotation.x = 0.4; // Set initial tilt
+        earthGroup.rotation.y = 0;
+        earthGroup.rotation.z = 0;
         scene.add(earthGroup);
         trailsGroup = new THREE.Group(); 
         earthGroup.add(trailsGroup);
@@ -323,28 +399,6 @@ private fun getHtmlContent(): String {
         // events
         renderer.domElement.addEventListener('click', onClick);
         window.addEventListener('resize', onWindowResize);
-        
-        // Add rotation toggle button event listener
-        const toggleBtn = document.getElementById('rotationToggle');
-        if(toggleBtn){
-            toggleBtn.addEventListener('click', function(){
-                isRealTimeSpeed = !isRealTimeSpeed;
-                if(isRealTimeSpeed){
-                    // Real-time: Earth rotates 360° in 24 hours = 0.004167°/sec
-                    // At 60fps, that's 0.004167/60 = 0.0000694°/frame
-                    rotationSpeed = 0.0000694 * (Math.PI / 180); // Convert to radians
-                    toggleBtn.textContent = '🌍 Real-Time Speed';
-                    toggleBtn.style.borderColor = '#2196F3';
-                    console.log('Rotation: Real-Time Speed');
-                } else {
-                    // Simulated: faster for better visualization
-                    rotationSpeed = 0.0005;
-                    toggleBtn.textContent = '🌍 Simulated Speed';
-                    toggleBtn.style.borderColor = '#4CAF50';
-                    console.log('Rotation: Simulated Speed');
-                }
-            });
-        }
         
         animate();
     }
@@ -547,7 +601,10 @@ private fun getHtmlContent(): String {
 
     function animate(){
         requestAnimationFrame(animate);
-        earthGroup.rotation.x = 0.4;
+        // Only apply default rotation when NOT in Bird's Eye View mode
+        if (!birdsEyeViewMode) {
+            earthGroup.rotation.x = 0.4;
+        }
         earthGroup.rotation.y += rotationSpeed;
         if(selectedHighlight && highlightedId != null){
             const obj = satelliteHitObjects.find(o => o.userData && o.userData.id === highlightedId) ||

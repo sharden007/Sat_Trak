@@ -12,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -101,7 +100,10 @@ fun BirdsEyeViewDialog(
                         modifier = Modifier.fillMaxSize(),
                         showTrails = true,
                         selectedSatelliteId = satellite.id,
-                        onSatelliteClick = { /* Optional: switch to clicked satellite */ }
+                        onSatelliteClick = { /* Optional: switch to clicked satellite */ },
+                        birdsEyeMode = true, // Enable Bird's Eye View mode
+                        focusLatitude = satellite.latitude,
+                        focusLongitude = satellite.longitude
                     )
 
                     // Overlay effects based on zoom phase
