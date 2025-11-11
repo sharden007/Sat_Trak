@@ -18,7 +18,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,11 +33,10 @@ fun BirdsEyeViewDialog(
     satellite: SatelliteData,
     onDismiss: () -> Unit,
     userLatitude: Double = 0.0,
-    userLongitude: Double = 0.0
+    userLongitude: Double = 0.0,
+    allSatellites: List<SatelliteData> = emptyList() // Add all satellites for the globe
 ) {
     var zoomPhase by remember { mutableStateOf(0) } // 0=space, 1=zooming, 2=ground
-    var scanLineProgress by remember { mutableStateOf(0f) }
-    var coverageRadius by remember { mutableStateOf(0f) }
     var populationCount by remember { mutableStateOf(0L) }
 
     // Calculate if user is in satellite's view
@@ -67,28 +65,6 @@ fun BirdsEyeViewDialog(
         zoomPhase = 1 // Start zooming
         delay(2000)
         zoomPhase = 2 // Show ground view
-
-        // Animate scan line
-        while (true) {
-            for (i in 0..100) {
-                scanLineProgress = i / 100f
-                delay(30)
-            }
-            delay(500)
-        }
-    }
-
-    // Animate coverage circle expansion
-    LaunchedEffect(zoomPhase) {
-        if (zoomPhase == 2) {
-            while (true) {
-                for (i in 0..100) {
-                    coverageRadius = i / 100f
-                    delay(20)
-                }
-                delay(1000)
-            }
-        }
     }
 
     Dialog(
@@ -112,24 +88,42 @@ fun BirdsEyeViewDialog(
                     userInView = userInView
                 )
 
-                // Main visualization
+                // Main visualization - Use the actual GlobeWebView
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Show the globe with all satellites
+                    GlobeWebView(
+                        satellites = allSatellites,
+                        modifier = Modifier.fillMaxSize(),
+                        showTrails = true,
+                        selectedSatelliteId = satellite.id,
+                        onSatelliteClick = { /* Optional: switch to clicked satellite */ }
+                    )
+
+                    // Overlay effects based on zoom phase
                     when (zoomPhase) {
-                        0 -> SpaceView()
-                        1 -> ZoomingView()
-                        2 -> GroundView(
-                            satellite = satellite,
-                            scanProgress = scanLineProgress,
-                            userLatitude = userLatitude,
-                            userLongitude = userLongitude,
-                            userInView = userInView,
-                            coverageRadius = coverageRadius
-                        )
+                        1 -> {
+                            // Zooming effect overlay
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ZoomingOverlay(satellite)
+                            }
+                        }
+                        2 -> {
+                            // Ground view overlay with scan effects
+                            GroundViewOverlay(
+                                satellite = satellite,
+                                userLatitude = userLatitude,
+                                userLongitude = userLongitude,
+                                userInView = userInView
+                            )
+                        }
                     }
                 }
 
@@ -218,13 +212,14 @@ fun BirdsEyeHeader(
 }
 
 @Composable
-fun SpaceView() {
-    val infiniteTransition = rememberInfiniteTransition(label = "space")
+fun ZoomingOverlay(satellite: SatelliteData) {
+    // Targeting reticle animation
+    val infiniteTransition = rememberInfiniteTransition(label = "zoom")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(20000, easing = LinearEasing),
+            animation = tween(3000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
@@ -234,166 +229,99 @@ fun SpaceView() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Animated Earth from space
-        Canvas(modifier = Modifier.size(300.dp)) {
+        // Targeting reticle
+        Canvas(modifier = Modifier.size(250.dp)) {
             val center = Offset(size.width / 2, size.height / 2)
-            val radius = size.minDimension / 2
 
-            // Draw Earth
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF1E3A8A),
-                        Color(0xFF0F172A)
-                    ),
-                    center = center
+            // Rotating crosshair
+            val radians = Math.toRadians(rotation.toDouble())
+            val lineLength = 120f
+
+            drawLine(
+                color = Color(0xFF00FF41),
+                start = Offset(
+                    center.x + cos(radians).toFloat() * 30f,
+                    center.y + sin(radians).toFloat() * 30f
                 ),
-                radius = radius,
-                center = center
+                end = Offset(
+                    center.x + cos(radians).toFloat() * lineLength,
+                    center.y + sin(radians).toFloat() * lineLength
+                ),
+                strokeWidth = 2f
             )
 
-            // Draw atmosphere glow
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF3B82F6).copy(alpha = 0.3f),
-                        Color.Transparent
-                    ),
+            drawLine(
+                color = Color(0xFF00FF41),
+                start = Offset(
+                    center.x + cos(radians + Math.PI).toFloat() * 30f,
+                    center.y + sin(radians + Math.PI).toFloat() * 30f
+                ),
+                end = Offset(
+                    center.x + cos(radians + Math.PI).toFloat() * lineLength,
+                    center.y + sin(radians + Math.PI).toFloat() * lineLength
+                ),
+                strokeWidth = 2f
+            )
+
+            // Multiple circle reticles
+            for (i in 1..3) {
+                drawCircle(
+                    color = Color(0xFF00FF41).copy(alpha = 1f - (i * 0.2f)),
                     center = center,
-                    radius = radius * 1.2f
-                ),
-                radius = radius * 1.2f,
-                center = center
-            )
-
-            // Draw continents (simplified)
-            rotate(rotation, center) {
-                drawCircle(
-                    color = Color(0xFF22C55E).copy(alpha = 0.6f),
-                    radius = radius * 0.3f,
-                    center = Offset(center.x + radius * 0.4f, center.y)
-                )
-                drawCircle(
-                    color = Color(0xFF22C55E).copy(alpha = 0.6f),
-                    radius = radius * 0.25f,
-                    center = Offset(center.x - radius * 0.5f, center.y - radius * 0.3f)
+                    radius = 40f * i,
+                    style = Stroke(width = 2f)
                 )
             }
         }
 
-        Text(
-            text = "ACQUIRING TARGET...",
-            color = Color(0xFF00FF41),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
+        // Zooming text
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp)
-        )
-    }
-}
-
-@Composable
-fun ZoomingView() {
-    val scale by rememberInfiniteTransition(label = "zoom").animateFloat(
-        initialValue = 1f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "scale"
-    )
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(
-            modifier = Modifier
-                .size(400.dp)
-                .scale(scale)
-                .blur(2.dp)
+                .padding(bottom = 80.dp)
+                .background(
+                    Color(0xFF0A0E27).copy(alpha = 0.9f),
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val center = Offset(size.width / 2, size.height / 2)
-
-            // Draw zooming Earth surface
-            drawCircle(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF1E40AF),
-                        Color(0xFF22C55E),
-                        Color(0xFF15803D)
-                    )
-                ),
-                center = center,
-                radius = size.minDimension / 2
+            Text(
+                text = "⬇ ZOOMING TO TARGET ⬇",
+                color = Color(0xFF00FF41),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "TRACKING: ${satellite.name}",
+                color = Color.White,
+                fontSize = 12.sp
             )
         }
-
-        // Targeting reticle
-        Canvas(modifier = Modifier.size(200.dp)) {
-            val center = Offset(size.width / 2, size.height / 2)
-
-            // Crosshair
-            drawLine(
-                color = Color(0xFF00FF41),
-                start = Offset(center.x - 100, center.y),
-                end = Offset(center.x + 100, center.y),
-                strokeWidth = 2f
-            )
-            drawLine(
-                color = Color(0xFF00FF41),
-                start = Offset(center.x, center.y - 100),
-                end = Offset(center.x, center.y + 100),
-                strokeWidth = 2f
-            )
-
-            // Circle reticle
-            drawCircle(
-                color = Color(0xFF00FF41),
-                center = center,
-                radius = 80f,
-                style = Stroke(width = 2f)
-            )
-            drawCircle(
-                color = Color(0xFF00FF41),
-                center = center,
-                radius = 60f,
-                style = Stroke(width = 2f)
-            )
-        }
-
-        Text(
-            text = "ZOOMING IN...",
-            color = Color(0xFF00FF41),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp)
-        )
     }
 }
 
 @Composable
-fun GroundView(
+fun GroundViewOverlay(
     satellite: SatelliteData,
-    scanProgress: Float,
     userLatitude: Double,
     userLongitude: Double,
-    userInView: Boolean,
-    coverageRadius: Float
+    userInView: Boolean
 ) {
-    val shimmer by rememberInfiniteTransition(label = "shimmer").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmer"
-    )
+    // Scan line animation
+    var scanProgress by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            for (i in 0..100) {
+                scanProgress = i / 100f
+                delay(30)
+            }
+            delay(500)
+        }
+    }
 
     val pulseScale by rememberInfiniteTransition(label = "pulse").animateFloat(
         initialValue = 1f,
@@ -405,165 +333,33 @@ fun GroundView(
         label = "pulseScale"
     )
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        // Simulated ground view
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Scan line effect overlay
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            val centerX = width / 2
-            val centerY = height / 2
-
-            // Draw terrain (simplified)
-            // Ocean
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0C4A6E),
-                        Color(0xFF075985)
-                    )
-                ),
-                size = size
-            )
-
-            // Land masses (based on satellite position)
-            val isOverLand = (satellite.latitude > -60 && satellite.latitude < 70) &&
-                    ((satellite.longitude > -30 && satellite.longitude < 60) ||
-                            (satellite.longitude > -130 && satellite.longitude < -60))
-
-            if (isOverLand) {
-                // Draw land
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF16A34A),
-                            Color(0xFF15803D),
-                            Color(0xFF14532D)
-                        )
-                    ),
-                    center = Offset(centerX, centerY * 1.2f),
-                    radius = width * 0.4f
-                )
-
-                // Cities (dots)
-                for (i in 1..5) {
-                    val angle = (i * 72f) + shimmer * 360f
-                    val cityX = centerX + cos(Math.toRadians(angle.toDouble())).toFloat() * (width * 0.2f)
-                    val cityY = centerY * 1.2f + sin(Math.toRadians(angle.toDouble())).toFloat() * (width * 0.2f)
-
-                    drawCircle(
-                        color = Color(0xFFFBBF24).copy(alpha = 0.6f + shimmer * 0.4f),
-                        center = Offset(cityX, cityY),
-                        radius = 8f
-                    )
-                }
-            }
-
-            // Draw COVERAGE CIRCLE - Animated expanding ring showing satellite's field of view
-            val maxCoverageRadius = width * 0.45f
-            val currentRadius = maxCoverageRadius * coverageRadius
-
-            // Multiple expanding rings for dramatic effect
-            for (i in 0..2) {
-                val ringRadius = currentRadius - (i * 50f)
-                if (ringRadius > 0) {
-                    drawCircle(
-                        color = Color(0xFF00FF41).copy(alpha = 0.3f - (i * 0.1f)),
-                        center = Offset(centerX, centerY),
-                        radius = ringRadius,
-                        style = Stroke(width = 3f)
-                    )
-                }
-            }
-
-            // Filled coverage area with gradient
-            if (coverageRadius > 0.3f) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF00FF41).copy(alpha = 0.15f),
-                            Color(0xFF00FF41).copy(alpha = 0.05f),
-                            Color.Transparent
-                        ),
-                        center = Offset(centerX, centerY),
-                        radius = currentRadius
-                    ),
-                    center = Offset(centerX, centerY),
-                    radius = currentRadius
-                )
-            }
-
-            // Draw USER LOCATION PIN if in view
-            if (userInView && (userLatitude != 0.0 || userLongitude != 0.0)) {
-                // Calculate user position relative to satellite
-                val userPosX = centerX + ((userLongitude - satellite.longitude) * 10).toFloat()
-                val userPosY = centerY - ((userLatitude - satellite.latitude) * 10).toFloat()
-
-                // Pulsing outer circle
-                drawCircle(
-                    color = Color(0xFFFFD700).copy(alpha = 0.4f),
-                    center = Offset(userPosX, userPosY),
-                    radius = 30f * pulseScale
-                )
-
-                // Middle ring
-                drawCircle(
-                    color = Color(0xFFFFD700).copy(alpha = 0.6f),
-                    center = Offset(userPosX, userPosY),
-                    radius = 20f,
-                    style = Stroke(width = 3f)
-                )
-
-                // Inner solid dot
-                drawCircle(
-                    color = Color(0xFFFFD700),
-                    center = Offset(userPosX, userPosY),
-                    radius = 12f
-                )
-
-                // Crosshair on user location
-                val crossSize = 25f
-                drawLine(
-                    color = Color(0xFFFFD700),
-                    start = Offset(userPosX - crossSize, userPosY),
-                    end = Offset(userPosX + crossSize, userPosY),
-                    strokeWidth = 2f
-                )
-                drawLine(
-                    color = Color(0xFFFFD700),
-                    start = Offset(userPosX, userPosY - crossSize),
-                    end = Offset(userPosX, userPosY + crossSize),
-                    strokeWidth = 2f
-                )
-            }
-
-            // Scan line effect
-            val scanY = height * scanProgress
+            val scanY = size.height * scanProgress
             drawLine(
                 color = Color(0xFF00FF41).copy(alpha = 0.7f),
                 start = Offset(0f, scanY),
-                end = Offset(width, scanY),
+                end = Offset(size.width, scanY),
                 strokeWidth = 3f
             )
 
             // Grid overlay
             for (i in 0..10) {
-                val x = width * i / 10
+                val x = size.width * i / 10
                 drawLine(
                     color = Color(0xFF00FF41).copy(alpha = 0.1f),
                     start = Offset(x, 0f),
-                    end = Offset(x, height),
+                    end = Offset(x, size.height),
                     strokeWidth = 1f
                 )
             }
             for (i in 0..10) {
-                val y = height * i / 10
+                val y = size.height * i / 10
                 drawLine(
                     color = Color(0xFF00FF41).copy(alpha = 0.1f),
                     start = Offset(0f, y),
-                    end = Offset(width, y),
+                    end = Offset(size.width, y),
                     strokeWidth = 1f
                 )
             }
@@ -574,12 +370,13 @@ fun GroundView(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 60.dp)
+                    .padding(top = 20.dp)
                     .background(
-                        Color(0xFFFFD700).copy(alpha = 0.9f),
+                        Color(0xFFFFD700).copy(alpha = 0.95f),
                         RoundedCornerShape(8.dp)
                     )
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .scale(pulseScale),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -596,15 +393,20 @@ fun GroundView(
             }
         }
 
-        // Info overlay
+        // Surveillance status
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(40.dp),
+                .padding(bottom = 80.dp)
+                .background(
+                    Color(0xFF0A0E27).copy(alpha = 0.9f),
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "SURVEILLANCE ACTIVE",
+                text = "📡 SURVEILLANCE ACTIVE",
                 color = Color(0xFF00FF41),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
@@ -613,12 +415,13 @@ fun GroundView(
             Text(
                 text = String.format(
                     Locale.US,
-                    "LAT: %.2f° LON: %.2f°",
+                    "LAT: %.2f° LON: %.2f° ALT: %.0f km",
                     satellite.latitude,
-                    satellite.longitude
+                    satellite.longitude,
+                    satellite.altitude
                 ),
                 color = Color.White,
-                fontSize = 14.sp
+                fontSize = 12.sp
             )
         }
     }

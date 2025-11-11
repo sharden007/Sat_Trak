@@ -455,7 +455,8 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                 satellite = selectedSatellite!!,
                 onDismiss = { showBirdsEyeView = false },
                 userLatitude = locationState.latitude,
-                userLongitude = locationState.longitude
+                userLongitude = locationState.longitude,
+                allSatellites = satellites
             )
         }
 
