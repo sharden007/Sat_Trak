@@ -453,7 +453,9 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
         if (showBirdsEyeView && selectedSatellite != null) {
             BirdsEyeViewDialog(
                 satellite = selectedSatellite!!,
-                onDismiss = { showBirdsEyeView = false }
+                onDismiss = { showBirdsEyeView = false },
+                userLatitude = locationState.latitude,
+                userLongitude = locationState.longitude
             )
         }
 
