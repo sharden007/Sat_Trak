@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.sat_trak.data.models.SatelliteData
 import com.example.sat_trak.location.rememberLocationProvider
 import com.example.sat_trak.ui.components.ARCameraView
+import com.example.sat_trak.ui.components.BirdsEyeViewDialog
 import com.example.sat_trak.ui.components.GlobeWebView
 import com.example.sat_trak.ui.viewmodel.SatelliteViewModel
 import com.example.sat_trak.sensors.rememberOrientationSensor
@@ -47,6 +48,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
     var showApiDataDialog by remember { mutableStateOf(false) }
+    var showBirdsEyeView by remember { mutableStateOf(false) }
     var onZoomIn by remember { mutableStateOf<(() -> Unit)?>(null) }
     var onZoomOut by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -435,8 +437,22 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                 onDismissRequest = { showBottomSheet = false },
                 sheetState = sheetState
             ) {
-                SatelliteDetailSheet(satellite = selectedSatellite!!)
+                SatelliteDetailSheet(
+                    satellite = selectedSatellite!!,
+                    onBirdsEyeClick = {
+                        showBirdsEyeView = true
+                        showBottomSheet = false
+                    }
+                )
             }
+        }
+
+        // Bird's Eye View Dialog
+        if (showBirdsEyeView && selectedSatellite != null) {
+            BirdsEyeViewDialog(
+                satellite = selectedSatellite!!,
+                onDismiss = { showBirdsEyeView = false }
+            )
         }
     }
 }
@@ -546,7 +562,7 @@ fun ApiDataRow(label: String, value: String) {
 }
 
 @Composable
-fun SatelliteDetailSheet(satellite: SatelliteData) {
+fun SatelliteDetailSheet(satellite: SatelliteData, onBirdsEyeClick: () -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -578,6 +594,44 @@ fun SatelliteDetailSheet(satellite: SatelliteData) {
                 shape = MaterialTheme.shapes.medium,
                 color = SatelliteColorUtils.getColorForSatellite(satellite.id)
             ) {}
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Bird's Eye View Button - Prominent and eye-catching
+        Button(
+            onClick = onBirdsEyeClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "🛰️",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text(
+                        text = "BIRD'S EYE VIEW",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "See what the satellite sees",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))

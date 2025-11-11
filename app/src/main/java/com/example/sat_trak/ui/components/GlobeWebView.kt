@@ -349,20 +349,42 @@ private fun getHtmlContent(): String {
             highlightedId = id;
             if(!id) return;
             
-            // Create a larger, more visible green wireframe box
-            const boxSize = 500; // Increased from 360 for better visibility
+            // Create a MUCH larger, more visible green wireframe box with pulsing animation
+            const boxSize = 800; // Increased from 500 for MAXIMUM visibility
             const boxGeom = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
-            const boxMat = new THREE.MeshBasicMaterial({ 
+            
+            // Create both a wireframe box AND corner markers for extra visibility
+            const boxMat = new THREE.LineBasicMaterial({ 
                 color: 0x00ff00, 
-                wireframe: true,
-                wireframeLinewidth: 3 // Thicker lines for better visibility
+                linewidth: 5,
+                transparent: true,
+                opacity: 0.9
             });
-            const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-            boxMesh.userData = { isHighlight: true };
+            
+            // Create edges geometry for better line rendering
+            const edges = new THREE.EdgesGeometry(boxGeom);
+            const boxMesh = new THREE.LineSegments(edges, boxMat);
+            boxMesh.userData = { isHighlight: true, createdTime: Date.now() };
+            
+            // Add corner spheres for extra visibility
+            const cornerSize = 80;
+            const cornerGeom = new THREE.SphereGeometry(cornerSize, 8, 8);
+            const cornerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
+            const corners = [
+                [-1, -1, -1], [1, -1, -1], [-1, 1, -1], [1, 1, -1],
+                [-1, -1, 1], [1, -1, 1], [-1, 1, 1], [1, 1, 1]
+            ];
+            corners.forEach(([x, y, z]) => {
+                const corner = new THREE.Mesh(cornerGeom, cornerMat.clone());
+                corner.position.set(x * boxSize/2, y * boxSize/2, z * boxSize/2);
+                corner.userData = { isHighlightCorner: true };
+                boxMesh.add(corner);
+            });
+            
             earthGroup.add(boxMesh);
             selectedHighlight = boxMesh;
             
-            console.log('Highlight box created for satellite ID:', id);
+            console.log('Enhanced highlight box created for satellite ID:', id, 'with size:', boxSize);
         } catch(e){ 
             console.error('Error in highlightSatellite:', e); 
         }
