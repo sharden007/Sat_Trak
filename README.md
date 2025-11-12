@@ -20,9 +20,9 @@
 </div>
 
 <div align="center">
-  <img src="screenshots/satellite-details.png" alt="Satellite Details" width="400"/>
-  <img src="screenshots/api-data.png" alt="API Data" width="400"/>
-  <p><i>Left: Satellite detail sheet | Right: Live API data viewer</i></p>
+  <img src="screenshots/Screenshot_20251112_080316.png" alt="Bird's Eye View" width="400"/>
+  <img src="screenshots/Screenshot_20251112_080335.png" alt="Satellite Details" width="400"/>
+  <p><i>Left: Bird's Eye View - See what the satellite sees | Right: Detailed satellite information panel</i></p>
 </div>
 
 ## 📱 About This Android App
