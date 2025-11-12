@@ -130,7 +130,8 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                     onZoomOut = zoomOut
                 },
                 showTrails = showTrails,
-                selectedSatelliteId = selectedSatellite?.id
+                selectedSatelliteId = selectedSatellite?.id,
+                birdsEyeMode = false // Explicitly disable Bird's Eye View mode on main screen
             )
         }
 
@@ -224,9 +225,9 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(top = 100.dp, start = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(8.dp)) {
                 // Show satellite name in the header
                 if (telemetrySatellite != null) {
                     Text(
@@ -259,7 +260,7 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // use explicit locale-aware formatting
                 Text("Speed: ${String.format(Locale.getDefault(), "%.2f", telemetry.first)} km/s", style = MaterialTheme.typography.bodySmall)
@@ -453,12 +454,15 @@ fun MainScreen(viewModel: SatelliteViewModel = viewModel()) {
         if (showBirdsEyeView && selectedSatellite != null) {
             BirdsEyeViewDialog(
                 satellite = selectedSatellite!!,
-                onDismiss = { showBirdsEyeView = false }
+                onDismiss = { showBirdsEyeView = false },
+                userLatitude = locationState.latitude,
+                userLongitude = locationState.longitude,
+                allSatellites = satellites
             )
         }
 
-        // Resume Auto Cycle button (appears only after manual selection, not during Bird's Eye)
-        if (userSelectedSatellite && !showBirdsEyeView) {
+        // Resume Auto Cycle button (appears only after manual selection, not during Bird's Eye or bottom sheet)
+        if (userSelectedSatellite && !showBirdsEyeView && !showBottomSheet) {
             ExtendedFloatingActionButton(
                 onClick = {
                     userSelectedSatellite = false

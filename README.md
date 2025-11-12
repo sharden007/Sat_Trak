@@ -8,22 +8,45 @@
 
 ## 📸 Screenshots
 
-<div align="center">
-  <img src="screenshots/app-overview.png" alt="Android App Overview" width="800"/>
-  <p><i>Native Android app - Real-time satellite tracking with 3D Earth globe</i></p>
-</div>
+<!-- Replaced the original large inline images with smaller clickable thumbnails that link to the full-size images. GitHub strips most CSS and JS, so hover-to-expand isn't reliably supported; provide a clickable and collapsible alternative. -->
 
 <div align="center">
-  <img src="screenshots/app-overview.png" alt="App Overview" width="400"/>
-  <img src="screenshots/data-panel.png" alt="Telemetry Panel" width="400"/>
-  <p><i>Left: Orbital trails visualization | Right: Auto-cycling telemetry display</i></p>
+  <!-- Clickable thumbnail: opens full image on GitHub when clicked -->
+  <a href="screenshots/app-overview.png">
+    <img src="screenshots/app-overview.png" alt="Android App Overview" width="260" style="margin:8px;"/>
+  </a>
+  <a href="screenshots/data-panel.png">
+    <img src="screenshots/data-panel.png" alt="Telemetry Panel" width="260" style="margin:8px;"/>
+  </a>
+  <a href="screenshots/Screenshot_20251112_080316.png">
+    <img src="screenshots/Screenshot_20251112_080316.png" alt="Bird's Eye View" width="260" style="margin:8px;"/>
+  </a>
+  <a href="screenshots/Screenshot_20251112_080335.png">
+    <img src="screenshots/Screenshot_20251112_080335.png" alt="Satellite Details" width="260" style="margin:8px;"/>
+  </a>
+  <p><i>Click any thumbnail to open the full-size screenshot on GitHub.</i></p>
 </div>
 
-<div align="center">
-  <img src="screenshots/satellite-details.png" alt="Satellite Details" width="400"/>
-  <img src="screenshots/api-data.png" alt="API Data" width="400"/>
-  <p><i>Left: Satellite detail sheet | Right: Live API data viewer</i></p>
-</div>
+<details>
+  <summary><b>Expand all screenshots (inline)</b></summary>
+
+  <!-- Full-size images shown inside a collapsible block for quick inline viewing -->
+  <div align="center">
+    <img src="screenshots/app-overview.png" alt="Android App Overview - full" width="800" style="margin:8px;"/>
+    <p><i>App Overview</i></p>
+
+    <img src="screenshots/data-panel.png" alt="Telemetry Panel - full" width="800" style="margin:8px;"/>
+    <p><i>Telemetry Panel</i></p>
+
+    <img src="screenshots/Screenshot_20251112_080316.png" alt="Bird's Eye View - full" width="800" style="margin:8px;"/>
+    <p><i>Bird's Eye View</i></p>
+
+    <img src="screenshots/Screenshot_20251112_080335.png" alt="Satellite Details - full" width="800" style="margin:8px;"/>
+    <p><i>Satellite Details</i></p>
+  </div>
+</details>
+
+<p><small>Note: GitHub README rendering sanitizes HTML and disallows arbitrary JavaScript and many CSS features, so hover-based expansion (onmouseover handlers or injected styles) won't reliably work for visitors. The thumbnails + clickable links and the collapsible block above provide the most compatible experience across GitHub and other Markdown renderers.</small></p>
 
 ## 📱 About This Android App
 
