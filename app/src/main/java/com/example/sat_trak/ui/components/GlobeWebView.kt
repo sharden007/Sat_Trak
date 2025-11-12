@@ -288,12 +288,24 @@ private fun getHtmlContent(): String {
     let rotationSpeed = 0.0009; // Simulated speed (default)
     let birdsEyeViewMode = false; // Track if we're in Bird's Eye View mode
     let targetCameraRotation = null; // Target rotation for Bird's Eye View
+    let wasInBirdsEyeMode = false; // Track previous state to detect transitions
+    let savedCameraZ = null; // Save camera Z position before Bird's Eye View
 
     // Set camera focus for Bird's Eye View mode
     function setCameraFocus(lat, lon) {
         try {
             birdsEyeViewMode = true;
+            wasInBirdsEyeMode = true;
             rotationSpeed = 0; // Stop rotation
+            
+            // Save current camera Z position before zooming in
+            if (savedCameraZ === null) {
+                savedCameraZ = camera.position.z;
+                console.log('Saved camera Z position:', savedCameraZ);
+            }
+            
+            // Zoom in for Bird's Eye View - move camera much closer (15000 gives nice detail view)
+            camera.position.z = 15000;
             
             // Calculate the rotation needed to center the view on the satellite
             // Convert lat/lon to rotation angles
@@ -306,7 +318,7 @@ private fun getHtmlContent(): String {
             
             targetCameraRotation = { x: earthGroup.rotation.x, y: earthGroup.rotation.y };
             
-            console.log('Bird\'s Eye View mode activated: focusing on lat=' + lat + ', lon=' + lon);
+            console.log('Bird\'s Eye View mode activated: focusing on lat=' + lat + ', lon=' + lon + ', zoomed to ' + camera.position.z);
         } catch(e) {
             console.error('Error in setCameraFocus:', e);
         }
@@ -315,13 +327,25 @@ private fun getHtmlContent(): String {
     // Exit Bird's Eye View mode
     function exitBirdsEyeView() {
         try {
+            // Only execute if we were actually in Bird's Eye View mode
+            if (!wasInBirdsEyeMode) {
+                console.log('exitBirdsEyeView called but was not in Bird\'s Eye mode - skipping');
+                return;
+            }
+            
             console.log('exitBirdsEyeView called - restoring normal view');
             birdsEyeViewMode = false;
+            wasInBirdsEyeMode = false;
             rotationSpeed = 0.0009; // Resume rotation at simulated speed
             targetCameraRotation = null;
             
-            // Reset camera position and rotation smoothly
-            camera.position.set(0, 0, 18000);
+            // Restore the saved camera Z position (preserves user's zoom level from before Bird's Eye View)
+            if (savedCameraZ !== null) {
+                camera.position.z = savedCameraZ;
+                savedCameraZ = null;
+                console.log('Restored camera Z position to:', camera.position.z);
+            }
+            
             camera.lookAt(0, 0, 0);
             
             // Reset earth rotation to default orientation
@@ -334,7 +358,7 @@ private fun getHtmlContent(): String {
                 renderer.render(scene, camera);
             }
             
-            console.log('Bird\'s Eye View mode deactivated - view restored');
+            console.log('Bird\'s Eye View mode deactivated - view restored (zoom preserved)');
         } catch(e) {
             console.error('Error in exitBirdsEyeView:', e);
         }
@@ -343,7 +367,7 @@ private fun getHtmlContent(): String {
     function init(){
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 50000);
-        camera.position.set(0, 0, 18000); // Ensure camera starts at correct position
+        camera.position.set(0, 0, 30000); // Ensure camera starts at correct position
         camera.lookAt(0, 0, 0); // Ensure camera looks at center
         renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
