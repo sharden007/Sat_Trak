@@ -404,3 +404,17 @@ Add dramatic visual effects showing near-miss events and space debris fields, ma
 - **Why it's viral**: Creates tension, drama, and educational value about real space concerns; generates FOMO and urgency that drives engagement and shares
 
 Both features leverage the existing 3D infrastructure while adding interactive, shareable moments that encourage users to show the app to friends and post on social media.
+
+Note: TO connect and debug using Nox Player (PC): (developer options should already be set)
+cd to installation directory:
+E:\Program Files\Nox\bin>
+Notice my setup is on E drive not C:
+
+run: $ nox_adb.exe connect 127.0.0.1:62001
+You should see a message like "connected to 127.0.0.1:62001".
+
+You should now see the new device in android studio and the logs in Logcat when connected.
+
+Here are some common resolutions you can use to simulate a Galaxy phone:
+
+1080w, 1920h, 420dpi
